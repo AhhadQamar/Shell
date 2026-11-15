@@ -82,13 +82,14 @@ fun LauncherRoot(homeSignal: Int) {
             )
             AnimatedVisibility(
                 visible = drawerOpen,
-                enter = slideInVertically(tween(280)) { it / 3 } + fadeIn(tween(220)),
-                exit = slideOutVertically(tween(220)) { it / 3 } + fadeOut(tween(180)),
+                enter = slideInVertically(tween(260)) { it / 4 } + fadeIn(tween(200)),
+                exit = slideOutVertically(tween(200)) { it / 4 } + fadeOut(tween(160)),
             ) {
                 Drawer(apps, state, accent) { drawerOpen = false }
             }
             AnimatedVisibility(visible = menuOpen, enter = fadeIn(), exit = fadeOut()) {
                 HomeMenu(
+                    accent,
                     onShellSettings = { menuOpen = false; settingsOpen = true },
                     onDismiss = { menuOpen = false },
                 )
@@ -98,7 +99,7 @@ fun LauncherRoot(homeSignal: Int) {
                 enter = slideInVertically(tween(260)) { it } + fadeIn(tween(200)),
                 exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160)),
             ) {
-                SettingsSheet(state, accent) { settingsOpen = false }
+                SettingsSheet(apps, state, accent) { settingsOpen = false }
             }
         }
     }

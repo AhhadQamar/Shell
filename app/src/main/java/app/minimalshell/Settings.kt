@@ -13,19 +13,21 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
@@ -35,78 +37,115 @@ private val Presets = listOf(
     0xFFFF9E6B, 0xFF8AB4F8, 0xFF7BD88F, 0xFFE58AC0, 0xFFC9A7FF, 0xFFFFD166,
 ).map { it.toInt() }
 
+/** Same language as the drawer: wallpaper stays visible on top, text sits on a bottom fade, hairlines divide. */
 @Composable
-fun SettingsSheet(state: ShellState, accent: Color, onClose: () -> Unit) {
+fun SettingsSheet(apps: List<AppEntry>, state: ShellState, accent: Color, onClose: () -> Unit) {
+    val hiddenApps = apps.filter { it.pkg in state.hidden }
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(0.5f))
+            .background(
+                Brush.verticalGradient(
+                    0f to Color.Transparent,
+                    0.35f to Color.Black.copy(0.75f),
+                    1f to Color.Black.copy(0.92f),
+                )
+            )
             .pointerInput(Unit) { detectTapGestures { onClose() } }
     ) {
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .background(Color(0xFF14161A), RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                .pointerInput(Unit) { detectTapGestures { } } // taps inside the sheet don't dismiss it
+                .pointerInput(Unit) { detectTapGestures { } } // taps inside don't dismiss
                 .windowInsetsPadding(WindowInsets.systemBars)
-                .padding(24.dp)
+                .padding(horizontal = 24.dp, vertical = 20.dp)
         ) {
-            Text("shell settings", color = Dim, fontFamily = Mono, fontSize = 12.sp)
-            Spacer(Modifier.height(20.dp))
+            Text("shell / settings", style = ink(12.sp, accent, mono = true, tracking = 1.sp))
+            Spacer(Modifier.height(10.dp))
+            Hairline(Modifier.fillMaxWidth())
 
-            Text("accent", color = Color.White, fontSize = 16.sp)
+            // accent
+            Spacer(Modifier.height(18.dp))
+            Text("accent", style = ink(16.sp))
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 val auto = state.accentOverride == 0
                 Box(
                     Modifier
-                        .size(36.dp)
-                        .border(1.5.dp, if (auto) Color.White else Dim, CircleShape)
-                        .clip(CircleShape)
+                        .size(32.dp)
+                        .border(1.5.dp, if (auto) Color.White else Dim, RoundedCornerShape(5.dp))
                         .clickable { state.setAccent(0) },
                     contentAlignment = Alignment.Center,
-                ) { Text("A", color = if (auto) Color.White else Dim, fontFamily = Mono, fontSize = 13.sp) }
+                ) { Text("A", style = ink(13.sp, if (auto) Color.White else Dim, mono = true)) }
                 Presets.forEach { argb ->
                     val selected = state.accentOverride == argb
                     Box(
                         Modifier
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color(argb))
-                            .then(if (selected) Modifier.border(2.dp, Color.White, CircleShape) else Modifier)
+                            .size(32.dp)
+                            .background(Color(argb), RoundedCornerShape(5.dp))
+                            .border(if (selected) 2.dp else 0.dp, if (selected) Color.White else Color.Transparent, RoundedCornerShape(5.dp))
                             .clickable { state.setAccent(argb) }
                     )
                 }
             }
             Spacer(Modifier.height(6.dp))
-            Text("A follows your wallpaper", color = Dim, fontFamily = Mono, fontSize = 11.sp)
+            Text("A follows your wallpaper", style = ink(11.sp, Dim, mono = true))
 
-            Spacer(Modifier.height(24.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Column {
-                    Text("frequent apps", color = Color.White, fontSize = 16.sp)
-                    Text("most-used apps at the top of the drawer", color = Dim, fontSize = 12.sp)
-                }
-                Switch(
-                    checked = state.showFrequent,
-                    onCheckedChange = { state.setShowFrequent(it) },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color(0xFF101214),
-                        checkedTrackColor = accent,
-                        uncheckedThumbColor = Dim,
-                        uncheckedTrackColor = Color.White.copy(0.1f),
-                        uncheckedBorderColor = Color.Transparent,
-                    ),
-                )
+            SettingToggle("frequent apps", "most-used apps at the bottom of the drawer", state.showFrequent, accent) {
+                state.setShowFrequent(it)
+            }
+            SettingToggle("type to search", "open the keyboard as soon as the drawer opens", state.autoKeyboard, accent) {
+                state.setAutoKeyboard(it)
             }
 
-            Spacer(Modifier.height(24.dp))
+            // hidden apps: finally manageable without having to search for them
+            Spacer(Modifier.height(22.dp))
+            Hairline(Modifier.fillMaxWidth())
+            Spacer(Modifier.height(14.dp))
             Text(
-                "${state.hidden.size} hidden · hidden apps still show up when you search",
-                color = Dim, fontFamily = Mono, fontSize = 12.sp,
+                if (hiddenApps.isEmpty()) "no hidden apps" else "${hiddenApps.size} hidden · tap to unhide",
+                style = ink(12.sp, Dim, mono = true),
             )
-            Spacer(Modifier.height(8.dp))
+            if (hiddenApps.isNotEmpty()) {
+                Column(Modifier.heightIn(max = 150.dp).verticalScroll(rememberScrollState())) {
+                    hiddenApps.forEach { app ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { state.toggleHidden(app.pkg) }.padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AppIcon(app, 28.dp, label = null)
+                            Spacer(Modifier.size(12.dp))
+                            Text(app.label, style = ink(15.sp), modifier = Modifier.weight(1f), maxLines = 1)
+                            Text("unhide", style = ink(11.sp, accent, mono = true))
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            Text("hidden apps still show up when you search", style = ink(11.sp, Dim, mono = true))
         }
+    }
+}
+
+@Composable
+private fun SettingToggle(title: String, subtitle: String, checked: Boolean, accent: Color, onChange: (Boolean) -> Unit) {
+    Spacer(Modifier.height(22.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = ink(16.sp))
+            Text(subtitle, style = ink(12.sp, Dim))
+        }
+        Switch(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color(0xFF101214),
+                checkedTrackColor = accent,
+                uncheckedThumbColor = Dim,
+                uncheckedTrackColor = Color.White.copy(0.1f),
+                uncheckedBorderColor = Color.Transparent,
+            ),
+        )
     }
 }

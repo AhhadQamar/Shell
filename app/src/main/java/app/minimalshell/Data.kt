@@ -202,6 +202,12 @@ object Prefs {
         sp(c).edit().putInt("accent", v).apply()
     }
 
+    fun autoKeyboard(c: Context): Boolean = sp(c).getBoolean("autoKeyboard", false)
+
+    fun setAutoKeyboard(c: Context, on: Boolean) {
+        sp(c).edit().putBoolean("autoKeyboard", on).apply()
+    }
+
     fun showFrequent(c: Context): Boolean = sp(c).getBoolean("frequent", true)
 
     fun setShowFrequent(c: Context, on: Boolean) {
@@ -220,6 +226,8 @@ class ShellState(private val ctx: Context) {
     var accentOverride by mutableIntStateOf(Prefs.accent(ctx))
         private set
     var showFrequent by mutableStateOf(Prefs.showFrequent(ctx))
+        private set
+    var autoKeyboard by mutableStateOf(Prefs.autoKeyboard(ctx))
         private set
 
     fun togglePin(pkg: String) {
@@ -251,6 +259,11 @@ class ShellState(private val ctx: Context) {
     fun setShowFrequent(on: Boolean) {
         showFrequent = on
         Prefs.setShowFrequent(ctx, on)
+    }
+
+    fun setAutoKeyboard(on: Boolean) {
+        autoKeyboard = on
+        Prefs.setAutoKeyboard(ctx, on)
     }
 }
 
@@ -300,6 +313,7 @@ data class Tick(
     val battery: Int,
     val charging: Boolean,
     val alarm: String?,
+    val dayFraction: Float, // 0..1, how far through today we are (drives the horizon line on Home)
 )
 
 fun readTick(ctx: Context): Tick {
@@ -329,6 +343,7 @@ fun readTick(ctx: Context): Tick {
         charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
             status == BatteryManager.BATTERY_STATUS_FULL,
         alarm = alarm,
+        dayFraction = now.toLocalTime().toSecondOfDay() / 86_400f,
     )
 }
 
