@@ -248,7 +248,7 @@ class ShellState(private val ctx: Context) {
         Prefs.setAccent(ctx, argb)
     }
 
-    fun setShowFrequent(on: Boolean) {
+    fun updateShowFrequent(on: Boolean) {
         showFrequent = on
         Prefs.setShowFrequent(ctx, on)
     }
