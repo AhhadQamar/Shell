@@ -22,7 +22,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -105,7 +104,8 @@ fun Modifier.pressable(onClick: () -> Unit, onLongClick: (() -> Unit)? = null): 
     val scale by animateFloatAsState(if (pressed) 0.94f else 1f, label = "press")
     val haptic = LocalHapticFeedback.current
     return this
-        .scale(scale)
+        // read inside the lambda = the animation only redraws; it no longer recomposes the row every frame
+        .graphicsLayer { scaleX = scale; scaleY = scale }
         .combinedClickable(
             interactionSource = source,
             indication = null,

@@ -12,6 +12,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -39,12 +40,16 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
+import androidx.lifecycle.compose.LifecycleStartEffect
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -52,17 +57,23 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.text.Collator
 import java.text.Normalizer
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlin.math.roundToInt
 
 const val MAX_PINNED = 5
 
+/**
+ * One launcher entry. Everything the UI and search need is computed once, here, off the main thread,
+ * so scrolling and typing never redo that work. The icon is a ready-to-draw bitmap; the source Drawable is not kept.
+ */
 data class AppEntry(
     val label: String,
     val pkg: String,
     val component: ComponentName,
-    val icon: Drawable,
+    val bitmap: ImageBitmap,
     val system: Boolean,
 ) {
     /**
@@ -71,55 +82,76 @@ data class AppEntry(
      */
     val key: String = component.flattenToString()
 
-    /** Rendered once, then reused by every list row. A broken icon becomes a placeholder, never a crash. */
-    val bitmap: ImageBitmap by lazy(LazyThreadSafetyMode.NONE) { renderIcon(icon) }
+    // search data, precomputed once per load instead of on every keystroke
+    val folded: String = label.fold()
+    val words: List<String> = folded.split(' ', '-', '.', '_').filter { it.isNotEmpty() }
+    val initials: String = words.joinToString("") { it.take(1) }
 
-    /** Section letter for the drawer; anything that isn't A-Z goes under '#'. */
-    fun letter(): Char {
+    private val section: Char = run {
         // NFD splits "É" into "E" + a combining accent, so accented Latin labels land under their base letter
         val c = Normalizer.normalize(label.trim(), Normalizer.Form.NFD).firstOrNull()?.uppercaseChar() ?: '#'
-        return if (c in 'A'..'Z') c else '#'
+        if (c in 'A'..'Z') c else '#'
     }
+
+    /** Section letter for the drawer; anything that isn't A-Z goes under '#'. */
+    fun letter(): Char = section
 }
 
-private fun renderIcon(d: Drawable): ImageBitmap =
-    try {
-        d.toBitmap(128, 128).asImageBitmap()
-    } catch (_: Throwable) {
-        Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888).also {
-            Canvas(it).drawCircle(64f, 64f, 44f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x44FFFFFF })
-        }.asImageBitmap()
+/** Shown instead of an icon that can't be rendered. */
+private fun placeholderIcon(px: Int): Bitmap =
+    Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888).also {
+        Canvas(it).drawCircle(px / 2f, px / 2f, px * 0.34f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x44FFFFFF })
     }
+
+/**
+ * Draws the icon once at the size it is displayed (largest use is the 52dp dock icon at this screen's density),
+ * then moves it to a GPU-only bitmap: it costs no Java heap and is already uploaded when the list first scrolls.
+ * Every step falls back to something that works, so one odd icon can't break loading.
+ */
+private fun renderIcon(d: Drawable, px: Int): ImageBitmap {
+    val soft = try { d.toBitmap(px, px) } catch (_: Throwable) { placeholderIcon(px) }
+    val gpu = try { soft.copy(Bitmap.Config.HARDWARE, false) } catch (_: Throwable) { null }
+    // Don't recycle `soft`: toBitmap() may hand back the app's own cached bitmap, which isn't ours to free.
+    return (gpu ?: soft).asImageBitmap()
+}
 
 // ---------- text helpers ----------
 
+private val Marks = Regex("\\p{M}+")
+
 /** Lowercase and strip accents, so "cafe" finds "Café". */
 fun String.fold(): String =
-    Normalizer.normalize(this, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase()
+    Normalizer.normalize(this, Normalizer.Form.NFD).replace(Marks, "").lowercase(Locale.ROOT)
 
 // ---------- apps ----------
 
-fun loadApps(ctx: Context): List<AppEntry> {
+private fun toEntry(pm: PackageManager, ri: ResolveInfo, px: Int): AppEntry? =
+    // one misbehaving app (bad label/icon resource) must not take the whole launcher down
+    runCatching {
+        val ai = ri.activityInfo
+        AppEntry(
+            label = runCatching { ri.loadLabel(pm).toString() }.getOrNull()?.takeIf { it.isNotBlank() }
+                ?: ai.packageName,
+            pkg = ai.packageName,
+            component = ComponentName(ai.packageName, ai.name),
+            bitmap = renderIcon(runCatching { ri.loadIcon(pm) }.getOrNull() ?: pm.defaultActivityIcon, px),
+            system = (ai.applicationInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0,
+        )
+    }.onFailure { Log.w("Shell", "skipping ${ri.activityInfo?.name}", it) }.getOrNull()
+
+/** Loads every app in parallel (label + icon work is CPU-bound and was running one app at a time). */
+suspend fun loadApps(ctx: Context): List<AppEntry> = coroutineScope {
     val pm = ctx.packageManager
     val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-    return pm.queryIntentActivities(query, 0)
+    val px = (52 * ctx.resources.displayMetrics.density).roundToInt().coerceIn(96, 256)
+    // a Collator sorts by the user's language rules (accents interleave with their base letter, case is ignored)
+    val collator = Collator.getInstance().apply { strength = Collator.PRIMARY }
+    pm.queryIntentActivities(query, 0)
         .filter { it.activityInfo.packageName != ctx.packageName }
-        // one misbehaving app (bad label/icon resource) must not take the whole launcher down
-        .mapNotNull { ri ->
-            runCatching {
-                val ai = ri.activityInfo
-                AppEntry(
-                    label = runCatching { ri.loadLabel(pm).toString() }.getOrNull()?.takeIf { it.isNotBlank() }
-                        ?: ai.packageName,
-                    pkg = ai.packageName,
-                    component = ComponentName(ai.packageName, ai.name),
-                    icon = runCatching { ri.loadIcon(pm) }.getOrNull() ?: pm.defaultActivityIcon,
-                    system = (ai.applicationInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0,
-                )
-            }.onFailure { Log.w("Shell", "skipping ${ri.activityInfo?.name}", it) }.getOrNull()
-        }
-        .sortedBy { it.label.lowercase() }
-        .also { list -> list.forEach { it.bitmap } } // pre-render icons off the main thread
+        .map { ri -> async { toEntry(pm, ri, px) } }
+        .awaitAll()
+        .filterNotNull()
+        .sortedWith(Comparator<AppEntry> { a, b -> collator.compare(a.label, b.label) })
 }
 
 /**
@@ -479,7 +511,9 @@ fun readTick(ctx: Context): Tick {
 fun rememberTick(): State<Tick> {
     val ctx = LocalContext.current
     val state = remember { mutableStateOf(readTick(ctx)) }
-    DisposableEffect(Unit) {
+    // Registered only between onStart and onStop. While another app is in front, Shell no longer wakes
+    // every minute and on every battery change to refresh a screen nobody can see; it re-reads on return.
+    LifecycleStartEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) { state.value = readTick(ctx) }
         }
@@ -492,7 +526,7 @@ fun rememberTick(): State<Tick> {
         }
         ContextCompat.registerReceiver(ctx, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         state.value = readTick(ctx)
-        onDispose { ctx.unregisterReceiver(receiver) }
+        onStopOrDispose { ctx.unregisterReceiver(receiver) }
     }
     return state
 }

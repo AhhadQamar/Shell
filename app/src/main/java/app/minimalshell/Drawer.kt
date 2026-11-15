@@ -78,18 +78,16 @@ private sealed interface Item {
 
 private class Model(val items: List<Item>, val index: Map<Char, Int>, val first: AppEntry?)
 
-/** 0 = starts with query, 1 = a word starts with it, 2 = contains it, 3 = matches word initials ("gm" -> Google Maps). */
-private fun matchRank(label: String, q: String): Int {
-    val l = label.fold()
-    val s = q.fold()
-    val words = l.split(' ', '-', '.', '_').filter { it.isNotEmpty() }
-    return when {
-        l.startsWith(s) -> 0
-        words.any { it.startsWith(s) } -> 1
-        l.contains(s) -> 2
-        words.joinToString("") { it.take(1) }.startsWith(s) -> 3
-        else -> -1
-    }
+/**
+ * 0 = starts with query, 1 = a word starts with it, 2 = contains it, 3 = matches word initials ("gm" -> Google Maps).
+ * [s] is the already-folded query; the app's folded label, words and initials were computed once at load time.
+ */
+private fun matchRank(a: AppEntry, s: String): Int = when {
+    a.folded.startsWith(s) -> 0
+    a.words.any { it.startsWith(s) } -> 1
+    a.folded.contains(s) -> 2
+    a.initials.startsWith(s) -> 3
+    else -> -1
 }
 
 /**
@@ -119,8 +117,9 @@ private fun buildModel(apps: List<AppEntry>, q: String, s: ShellState): Model {
         first = visible.firstOrNull()
     } else {
         Calc.eval(q)?.let { items += Item.Calc(it) }
+        val folded = q.fold() // once per keystroke, not once per app
         val matches = apps
-            .mapNotNull { a -> matchRank(a.label, q).takeIf { it >= 0 }?.let { a to it } }
+            .mapNotNull { a -> matchRank(a, folded).takeIf { it >= 0 }?.let { a to it } }
             .sortedWith(
                 compareBy<Pair<AppEntry, Int>>(
                     { it.second },
