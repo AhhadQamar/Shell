@@ -90,7 +90,7 @@ fun SettingsSheet(state: ShellState, accent: Color, onClose: () -> Unit) {
                 }
                 Switch(
                     checked = state.showFrequent,
-                    onCheckedChange = { state.setShowFrequent(it) },
+                    onCheckedChange = { state.updateShowFrequent(it) },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color(0xFF101214),
                         checkedTrackColor = accent,
