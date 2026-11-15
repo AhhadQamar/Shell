@@ -170,7 +170,7 @@ fun AppMenu(app: AppEntry, state: ShellState, expanded: Boolean, onDismiss: () -
         }
         MenuItem(if (hidden) "unhide" else "hide") { state.toggleHidden(app.pkg); onDismiss() }
         MenuItem("app info") { openAppInfo(ctx, app.pkg); onDismiss() }
-        MenuItem("uninstall") { uninstallApp(ctx, app.pkg); onDismiss() }
+        if (!app.system) MenuItem("uninstall") { uninstallApp(ctx, app.pkg); onDismiss() }
     }
 }
 

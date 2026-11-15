@@ -10,6 +10,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.BatteryManager
@@ -17,6 +18,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.format.DateFormat
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
@@ -34,6 +36,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -42,6 +45,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
+import java.text.Normalizer
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -52,16 +56,24 @@ data class AppEntry(
     val pkg: String,
     val component: ComponentName,
     val icon: Drawable,
+    val system: Boolean,
 ) {
     /** Rendered once, then reused by every list row. */
     val bitmap: ImageBitmap by lazy(LazyThreadSafetyMode.NONE) { icon.toBitmap(128, 128).asImageBitmap() }
 
     /** Section letter for the drawer; anything that isn't A-Z goes under '#'. */
     fun letter(): Char {
-        val c = label.firstOrNull()?.uppercaseChar() ?: '#'
+        // NFD splits "É" into "E" + a combining accent, so accented Latin labels land under their base letter
+        val c = Normalizer.normalize(label.trim(), Normalizer.Form.NFD).firstOrNull()?.uppercaseChar() ?: '#'
         return if (c in 'A'..'Z') c else '#'
     }
 }
+
+// ---------- text helpers ----------
+
+/** Lowercase and strip accents, so "cafe" finds "Café". */
+fun String.fold(): String =
+    Normalizer.normalize(this, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase()
 
 // ---------- apps ----------
 
@@ -77,6 +89,7 @@ fun loadApps(ctx: Context): List<AppEntry> {
                 pkg = ai.packageName,
                 component = ComponentName(ai.packageName, ai.name),
                 icon = it.loadIcon(pm),
+                system = (ai.applicationInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0,
             )
         }
         .sortedBy { it.label.lowercase() }
@@ -90,8 +103,18 @@ fun rememberApps(): State<List<AppEntry>> {
     val state = remember { mutableStateOf(emptyList<AppEntry>()) }
     DisposableEffect(Unit) {
         val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val reload = { scope.launch { state.value = loadApps(ctx) }; Unit }
-        reload()
+        // first load is immediate; later package events are debounced, because
+        // ACTION_PACKAGE_CHANGED can fire in bursts and each reload re-renders every icon
+        scope.launch { state.value = loadApps(ctx) }
+        var pending: Job? = null
+        val reload = {
+            pending?.cancel()
+            pending = scope.launch {
+                delay(400)
+                state.value = loadApps(ctx)
+            }
+            Unit
+        }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) { reload() }
         }
@@ -112,42 +135,52 @@ fun rememberApps(): State<List<AppEntry>> {
 
 private fun newTask(i: Intent): Intent = i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
-fun launchApp(ctx: Context, app: AppEntry) {
-    ctx.startActivity(
-        newTask(
-            Intent(Intent.ACTION_MAIN)
-                .addCategory(Intent.CATEGORY_LAUNCHER)
-                .setComponent(app.component)
-                .addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-        )
+/**
+ * startActivity throws (ActivityNotFoundException, SecurityException, ...) when nothing can handle the intent:
+ * a disabled app, no browser installed, an app removed a moment ago. A launcher must never crash on that.
+ * Returns true if the activity started.
+ */
+private fun safeStart(ctx: Context, intent: Intent, failMessage: String = "Couldn't open that"): Boolean =
+    try {
+        ctx.startActivity(newTask(intent))
+        true
+    } catch (_: Exception) {
+        Toast.makeText(ctx, failMessage, Toast.LENGTH_SHORT).show()
+        false
+    }
+
+fun launchApp(ctx: Context, app: AppEntry): Boolean =
+    safeStart(
+        ctx,
+        Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .setComponent(app.component)
+            .addFlags(Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED),
+        "Couldn't open ${app.label}",
     )
-}
 
 fun openAppInfo(ctx: Context, pkg: String) {
-    ctx.startActivity(
-        newTask(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null)))
-    )
+    safeStart(ctx, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null)))
 }
 
 fun uninstallApp(ctx: Context, pkg: String) {
-    ctx.startActivity(newTask(Intent(Intent.ACTION_DELETE, Uri.fromParts("package", pkg, null))))
+    safeStart(ctx, Intent(Intent.ACTION_DELETE, Uri.fromParts("package", pkg, null)))
 }
 
 fun webSearch(ctx: Context, q: String) {
-    ctx.startActivity(
-        newTask(Intent(Intent.ACTION_VIEW, Uri.parse("https://duckduckgo.com/?q=" + Uri.encode(q))))
+    safeStart(
+        ctx,
+        Intent(Intent.ACTION_VIEW, Uri.parse("https://duckduckgo.com/?q=" + Uri.encode(q))),
+        "No browser found",
     )
 }
 
 fun pickWallpaper(ctx: Context) {
-    try {
-        ctx.startActivity(newTask(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Wallpaper")))
-    } catch (_: Exception) {
-    }
+    safeStart(ctx, Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Wallpaper"))
 }
 
 fun openSystemSettings(ctx: Context) {
-    ctx.startActivity(newTask(Intent(Settings.ACTION_SETTINGS)))
+    safeStart(ctx, Intent(Settings.ACTION_SETTINGS))
 }
 
 fun copyToClipboard(ctx: Context, text: String) {
@@ -231,7 +264,12 @@ class ShellState(private val ctx: Context) {
         private set
 
     fun togglePin(pkg: String) {
-        pinned = if (pkg in pinned) pinned - pkg else (pinned + pkg).takeLast(MAX_PINNED)
+        if (pkg !in pinned && pinned.size >= MAX_PINNED) {
+            // used to silently drop the oldest pin; now the user decides which one goes
+            Toast.makeText(ctx, "Dock is full ($MAX_PINNED). Unpin one first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        pinned = if (pkg in pinned) pinned - pkg else pinned + pkg
         Prefs.setPinned(ctx, pinned)
     }
 
@@ -246,7 +284,7 @@ class ShellState(private val ctx: Context) {
     }
 
     fun launch(app: AppEntry) {
-        launchApp(ctx, app)
+        if (!launchApp(ctx, app)) return
         counts = counts + (app.pkg to ((counts[app.pkg] ?: 0) + 1))
         Prefs.setCounts(ctx, counts)
     }
@@ -347,13 +385,28 @@ fun readTick(ctx: Context): Tick {
     )
 }
 
+/**
+ * Refreshes on the system's own minute tick (and on time/zone/battery/screen-on changes) instead of polling.
+ * ACTION_TIME_TICK can only be received by a receiver registered at runtime, which is what happens here.
+ */
 @Composable
 fun rememberTick(): State<Tick> {
     val ctx = LocalContext.current
-    return produceState(initialValue = readTick(ctx)) {
-        while (true) {
-            delay(10_000)
-            value = readTick(ctx)
+    val state = remember { mutableStateOf(readTick(ctx)) }
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) { state.value = readTick(ctx) }
         }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_TIME_TICK)
+            addAction(Intent.ACTION_TIME_CHANGED)
+            addAction(Intent.ACTION_TIMEZONE_CHANGED)
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(Intent.ACTION_SCREEN_ON)
+        }
+        ContextCompat.registerReceiver(ctx, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        state.value = readTick(ctx)
+        onDispose { ctx.unregisterReceiver(receiver) }
     }
+    return state
 }

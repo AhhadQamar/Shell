@@ -79,8 +79,8 @@ private class Model(val items: List<Item>, val index: Map<Char, Int>, val first:
 
 /** 0 = starts with query, 1 = a word starts with it, 2 = contains it, 3 = matches word initials ("gm" -> Google Maps). */
 private fun matchRank(label: String, q: String): Int {
-    val l = label.lowercase()
-    val s = q.lowercase()
+    val l = label.fold()
+    val s = q.fold()
     val words = l.split(' ', '-', '.', '_').filter { it.isNotEmpty() }
     return when {
         l.startsWith(s) -> 0
