@@ -93,10 +93,10 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellState, accent: Color, onClos
             Text("A follows your wallpaper", style = ink(11.sp, Dim, mono = true))
 
             SettingToggle("frequent apps", "most-used apps at the bottom of the drawer", state.showFrequent, accent) {
-                state.setShowFrequent(it)
+                state.updateShowFrequent(it)
             }
             SettingToggle("type to search", "open the keyboard as soon as the drawer opens", state.autoKeyboard, accent) {
-                state.setAutoKeyboard(it)
+                state.updateAutoKeyboard(it)
             }
 
             // hidden apps: finally manageable without having to search for them

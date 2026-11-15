@@ -256,12 +256,12 @@ class ShellState(private val ctx: Context) {
         Prefs.setAccent(ctx, argb)
     }
 
-    fun setShowFrequent(on: Boolean) {
+    fun updateShowFrequent(on: Boolean) {
         showFrequent = on
         Prefs.setShowFrequent(ctx, on)
     }
 
-    fun setAutoKeyboard(on: Boolean) {
+    fun updateAutoKeyboard(on: Boolean) {
         autoKeyboard = on
         Prefs.setAutoKeyboard(ctx, on)
     }
