@@ -35,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -103,7 +104,7 @@ private fun buildModel(apps: List<AppEntry>, q: String, s: ShellState): Model {
     val first: AppEntry?
 
     if (q.isEmpty()) {
-        val visible = apps.filter { it.pkg !in s.hidden }
+        val visible = apps.filter { it.key !in s.hidden }
         if (s.showFrequent) {
             val f = frequentApps(visible, s)
             if (f.isNotEmpty()) items += Item.Frequent(f)
@@ -123,7 +124,7 @@ private fun buildModel(apps: List<AppEntry>, q: String, s: ShellState): Model {
             .sortedWith(
                 compareBy<Pair<AppEntry, Int>>(
                     { it.second },
-                    { -(s.counts[it.first.pkg] ?: 0) },
+                    { -(s.counts[it.first.key] ?: 0) },
                     { it.first.label.lowercase() },
                 )
             )
@@ -319,7 +320,7 @@ private fun SectionHeader(letter: Char, accent: Color) {
 @Composable
 private fun AppRow(app: AppEntry, state: ShellState, accent: Color, highlight: Boolean, onOpen: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
-    val hidden = app.pkg in state.hidden
+    val hidden = app.key in state.hidden
     Box {
         Row(
             Modifier
@@ -357,20 +358,22 @@ private fun AppRow(app: AppEntry, state: ShellState, accent: Color, highlight: B
 private fun FrequentRow(apps: List<AppEntry>, state: ShellState, onOpen: (AppEntry) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp)) {
         apps.forEach { app ->
-            var menu by remember { mutableStateOf(false) }
-            Box {
-                Column(
-                    Modifier.width(76.dp).pressable(onClick = { onOpen(app) }, onLongClick = { menu = true }),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    AppIcon(app, 48.dp, label = null)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        app.label, style = ink(11.sp, Color.White.copy(0.85f)),
-                        maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-                    )
+            key(app.key) {
+                var menu by remember { mutableStateOf(false) }
+                Box {
+                    Column(
+                        Modifier.width(76.dp).pressable(onClick = { onOpen(app) }, onLongClick = { menu = true }),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        AppIcon(app, 48.dp, label = null)
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            app.label, style = ink(11.sp, Color.White.copy(0.85f)),
+                            maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                        )
+                    }
+                    AppMenu(app, state, menu) { menu = false }
                 }
-                AppMenu(app, state, menu) { menu = false }
             }
         }
     }

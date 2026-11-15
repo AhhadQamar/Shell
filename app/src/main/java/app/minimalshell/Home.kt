@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
@@ -26,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +59,7 @@ fun Home(
     apps: List<AppEntry>,
     state: ShellState,
     accent: Color,
+    appsLoaded: Boolean,
     onOpenDrawer: () -> Unit,
     onLongPress: () -> Unit,
 ) {
@@ -64,7 +67,7 @@ fun Home(
     val haptic = LocalHapticFeedback.current
     val tick by rememberTick()
     var drag by remember { mutableFloatStateOf(0f) }
-    val dock = state.pinned.mapNotNull { p -> apps.firstOrNull { it.pkg == p } }.take(MAX_PINNED)
+    val dock = state.pinned.mapNotNull { k -> apps.firstOrNull { it.key == k } }.take(MAX_PINNED)
 
     Box(
         Modifier
@@ -129,21 +132,25 @@ fun Home(
 
             // dock: bare icons sitting on the horizon, no backing panel
             Row(
-                Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                // min height = icon size, so the row doesn't jump when icons appear after the first load
+                Modifier.fillMaxWidth().padding(vertical = 18.dp).heightIn(min = 52.dp),
                 horizontalArrangement = if (dock.isEmpty()) Arrangement.Start else Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (dock.isEmpty()) {
+                // only suggest pinning once we know there really are no pins, not while apps are still loading
+                if (appsLoaded && state.pinned.isEmpty()) {
                     Text("long-press an app in the drawer to pin it", style = ink(12.sp, Dim, mono = true))
                 }
                 dock.forEach { app ->
-                    var menu by remember { mutableStateOf(false) }
-                    Box {
-                        AppIcon(
-                            app, 52.dp,
-                            Modifier.pressable(onClick = { state.launch(app) }, onLongClick = { menu = true }),
-                        )
-                        AppMenu(app, state, menu) { menu = false }
+                    key(app.key) { // keeps each icon's menu state with its own app when the dock changes
+                        var menu by remember { mutableStateOf(false) }
+                        Box {
+                            AppIcon(
+                                app, 52.dp,
+                                Modifier.pressable(onClick = { state.launch(app) }, onLongClick = { menu = true }),
+                            )
+                            AppMenu(app, state, menu) { menu = false }
+                        }
                     }
                 }
             }

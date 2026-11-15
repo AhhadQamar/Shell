@@ -11,6 +11,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.BatteryManager
@@ -18,6 +22,7 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.text.format.DateFormat
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -34,12 +39,14 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.toBitmap
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
@@ -58,8 +65,14 @@ data class AppEntry(
     val icon: Drawable,
     val system: Boolean,
 ) {
-    /** Rendered once, then reused by every list row. */
-    val bitmap: ImageBitmap by lazy(LazyThreadSafetyMode.NONE) { icon.toBitmap(128, 128).asImageBitmap() }
+    /**
+     * Identity for pins, hidden apps and launch counts. It is the component ("pkg/Class"), not the package,
+     * because one package can expose several launcher entries and each must be pinned/hidden on its own.
+     */
+    val key: String = component.flattenToString()
+
+    /** Rendered once, then reused by every list row. A broken icon becomes a placeholder, never a crash. */
+    val bitmap: ImageBitmap by lazy(LazyThreadSafetyMode.NONE) { renderIcon(icon) }
 
     /** Section letter for the drawer; anything that isn't A-Z goes under '#'. */
     fun letter(): Char {
@@ -68,6 +81,15 @@ data class AppEntry(
         return if (c in 'A'..'Z') c else '#'
     }
 }
+
+private fun renderIcon(d: Drawable): ImageBitmap =
+    try {
+        d.toBitmap(128, 128).asImageBitmap()
+    } catch (_: Throwable) {
+        Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888).also {
+            Canvas(it).drawCircle(64f, 64f, 44f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x44FFFFFF })
+        }.asImageBitmap()
+    }
 
 // ---------- text helpers ----------
 
@@ -82,41 +104,61 @@ fun loadApps(ctx: Context): List<AppEntry> {
     val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
     return pm.queryIntentActivities(query, 0)
         .filter { it.activityInfo.packageName != ctx.packageName }
-        .map {
-            val ai = it.activityInfo
-            AppEntry(
-                label = it.loadLabel(pm).toString(),
-                pkg = ai.packageName,
-                component = ComponentName(ai.packageName, ai.name),
-                icon = it.loadIcon(pm),
-                system = (ai.applicationInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0,
-            )
+        // one misbehaving app (bad label/icon resource) must not take the whole launcher down
+        .mapNotNull { ri ->
+            runCatching {
+                val ai = ri.activityInfo
+                AppEntry(
+                    label = runCatching { ri.loadLabel(pm).toString() }.getOrNull()?.takeIf { it.isNotBlank() }
+                        ?: ai.packageName,
+                    pkg = ai.packageName,
+                    component = ComponentName(ai.packageName, ai.name),
+                    icon = runCatching { ri.loadIcon(pm) }.getOrNull() ?: pm.defaultActivityIcon,
+                    system = (ai.applicationInfo?.flags ?: 0) and ApplicationInfo.FLAG_SYSTEM != 0,
+                )
+            }.onFailure { Log.w("Shell", "skipping ${ri.activityInfo?.name}", it) }.getOrNull()
         }
         .sortedBy { it.label.lowercase() }
         .also { list -> list.forEach { it.bitmap } } // pre-render icons off the main thread
 }
 
-/** App list that reloads itself when packages are installed, removed or updated. */
+/**
+ * App list that reloads itself when packages are installed, removed or updated.
+ * Null means "first load not finished yet", which is different from "no apps".
+ */
 @Composable
-fun rememberApps(): State<List<AppEntry>> {
+fun rememberApps(): State<List<AppEntry>?> {
     val ctx = LocalContext.current
-    val state = remember { mutableStateOf(emptyList<AppEntry>()) }
+    val state = remember { mutableStateOf<List<AppEntry>?>(null) }
     DisposableEffect(Unit) {
-        val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        // first load is immediate; later package events are debounced, because
-        // ACTION_PACKAGE_CHANGED can fire in bursts and each reload re-renders every icon
-        scope.launch { state.value = loadApps(ctx) }
-        var pending: Job? = null
-        val reload = {
-            pending?.cancel()
-            pending = scope.launch {
-                delay(400)
-                state.value = loadApps(ctx)
+        val scope = CoroutineScope(
+            Dispatchers.Default + SupervisorJob() +
+                CoroutineExceptionHandler { _, e -> Log.e("Shell", "app load failed", e) },
+        )
+        // One job slot: a newer request cancels an older one, so a slow stale load can't overwrite a fresh one.
+        // Package events are debounced because ACTION_PACKAGE_CHANGED fires in bursts and each reload re-renders icons.
+        var job: Job? = null
+        val reload = { wait: Long ->
+            job?.cancel()
+            job = scope.launch {
+                if (wait > 0) delay(wait)
+                val result = runCatching { loadApps(ctx) }
+                ensureActive() // cancelled while loading: drop the result
+                result.onSuccess { state.value = it }
+                    .onFailure {
+                        Log.e("Shell", "loadApps failed", it)
+                        if (state.value == null) state.value = emptyList()
+                    }
             }
             Unit
         }
+        reload(0)
         val receiver = object : BroadcastReceiver() {
-            override fun onReceive(c: Context, i: Intent) { reload() }
+            override fun onReceive(c: Context, i: Intent) {
+                // an update sends REMOVED(replacing) then ADDED; reacting to the first would briefly "uninstall" the app
+                if (i.action == Intent.ACTION_PACKAGE_REMOVED && i.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
+                reload(400)
+            }
         }
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)
@@ -263,30 +305,74 @@ class ShellState(private val ctx: Context) {
     var autoKeyboard by mutableStateOf(Prefs.autoKeyboard(ctx))
         private set
 
-    fun togglePin(pkg: String) {
-        if (pkg !in pinned && pinned.size >= MAX_PINNED) {
-            // used to silently drop the oldest pin; now the user decides which one goes
+    /** Keys of the apps installed right now; empty until the first successful load. */
+    private var liveKeys: Set<String> = emptySet()
+
+    // pinned / hidden / counts are all keyed by AppEntry.key
+
+    fun togglePin(key: String) {
+        // entries for apps that no longer exist must not eat dock slots
+        val used = if (liveKeys.isEmpty()) pinned.size else pinned.count { it in liveKeys }
+        if (key !in pinned && used >= MAX_PINNED) {
             Toast.makeText(ctx, "Dock is full ($MAX_PINNED). Unpin one first.", Toast.LENGTH_SHORT).show()
             return
         }
-        pinned = if (pkg in pinned) pinned - pkg else pinned + pkg
+        pinned = if (key in pinned) pinned - key else pinned + key
         Prefs.setPinned(ctx, pinned)
     }
 
-    fun toggleHidden(pkg: String) {
-        val nowHidden = pkg !in hidden
-        hidden = if (nowHidden) hidden + pkg else hidden - pkg
+    fun toggleHidden(key: String) {
+        val nowHidden = key !in hidden
+        hidden = if (nowHidden) hidden + key else hidden - key
         Prefs.setHidden(ctx, hidden)
-        if (nowHidden && pkg in pinned) {
-            pinned = pinned - pkg
+        if (nowHidden && key in pinned) {
+            pinned = pinned - key
             Prefs.setPinned(ctx, pinned)
         }
     }
 
     fun launch(app: AppEntry) {
         if (!launchApp(ctx, app)) return
-        counts = counts + (app.pkg to ((counts[app.pkg] ?: 0) + 1))
+        counts = counts + (app.key to ((counts[app.key] ?: 0) + 1))
         Prefs.setCounts(ctx, counts)
+    }
+
+    private fun isInstalled(pkg: String): Boolean =
+        try {
+            ctx.packageManager.getApplicationInfo(pkg, 0)
+            true
+        } catch (_: PackageManager.NameNotFoundException) {
+            false
+        }
+
+    /**
+     * Call after every app load. Does two things:
+     *  1. migrates old package-only entries ("com.foo") to component keys ("com.foo/.Main"),
+     *  2. drops entries for apps that were uninstalled, so they stop taking dock slots and storage.
+     * An empty list (failed load) is ignored so a bad load can never wipe the user's pins.
+     */
+    fun sync(apps: List<AppEntry>) {
+        if (apps.isEmpty()) return
+        liveKeys = apps.mapTo(HashSet()) { it.key }
+        val byPkg = apps.groupBy { it.pkg }
+        // a key is kept if the app is live, or its package is still installed (e.g. launcher entry temporarily disabled)
+        fun keep(k: String) = k in liveKeys || isInstalled(k.substringBefore('/'))
+        fun legacyFirst(k: String) = if ('/' in k) k else byPkg[k]?.first()?.key ?: k
+
+        val newPinned = pinned.map(::legacyFirst).distinct().filter(::keep)
+        val newHidden = hidden
+            .flatMap { k -> if ('/' in k) listOf(k) else byPkg[k]?.map { it.key } ?: listOf(k) }
+            .filter(::keep)
+            .toSet()
+        val newCounts = HashMap<String, Int>()
+        counts.forEach { (k, n) ->
+            val nk = legacyFirst(k)
+            if (keep(nk)) newCounts[nk] = (newCounts[nk] ?: 0) + n
+        }
+
+        if (newPinned != pinned) { pinned = newPinned; Prefs.setPinned(ctx, newPinned) }
+        if (newHidden != hidden) { hidden = newHidden; Prefs.setHidden(ctx, newHidden) }
+        if (newCounts != counts) { counts = newCounts; Prefs.setCounts(ctx, newCounts) }
     }
 
     fun setAccent(argb: Int) {
@@ -306,8 +392,8 @@ class ShellState(private val ctx: Context) {
 }
 
 fun frequentApps(visible: List<AppEntry>, s: ShellState, n: Int = 4): List<AppEntry> =
-    visible.filter { (s.counts[it.pkg] ?: 0) > 0 }
-        .sortedByDescending { s.counts[it.pkg] ?: 0 }
+    visible.filter { (s.counts[it.key] ?: 0) > 0 }
+        .sortedByDescending { s.counts[it.key] ?: 0 }
         .take(n)
 
 // ---------- wallpaper accent ----------

@@ -40,7 +40,7 @@ private val Presets = listOf(
 /** Same language as the drawer: wallpaper stays visible on top, text sits on a bottom fade, hairlines divide. */
 @Composable
 fun SettingsSheet(apps: List<AppEntry>, state: ShellState, accent: Color, onClose: () -> Unit) {
-    val hiddenApps = apps.filter { it.pkg in state.hidden }
+    val hiddenApps = apps.filter { it.key in state.hidden }
     Box(
         Modifier
             .fillMaxSize()
@@ -59,6 +59,8 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellState, accent: Color, onClos
                 .fillMaxWidth()
                 .pointerInput(Unit) { detectTapGestures { } } // taps inside don't dismiss
                 .windowInsetsPadding(WindowInsets.systemBars)
+                // scrolls when the content is taller than the screen (landscape, small phones, large fonts)
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 20.dp)
         ) {
             Text("shell / settings", style = ink(12.sp, accent, mono = true, tracking = 1.sp))
@@ -111,7 +113,7 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellState, accent: Color, onClos
                 Column(Modifier.heightIn(max = 150.dp).verticalScroll(rememberScrollState())) {
                     hiddenApps.forEach { app ->
                         Row(
-                            Modifier.fillMaxWidth().clickable { state.toggleHidden(app.pkg) }.padding(vertical = 10.dp),
+                            Modifier.fillMaxWidth().clickable { state.toggleHidden(app.key) }.padding(vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             AppIcon(app, 28.dp, label = null)

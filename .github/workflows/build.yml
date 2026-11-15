@@ -24,15 +24,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
+      - name: Build release APK
+        run: gradle assembleRelease --no-daemon
 
+      # ref names like "feature/x" contain a slash, which would make cp write into a missing folder
       - name: Name the APK
-        run: cp app/build/outputs/apk/debug/app-debug.apk "Shell-${{ github.ref_name }}.apk"
+        run: cp app/build/outputs/apk/release/app-release.apk "Shell-${GITHUB_REF_NAME//\//-}.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Shell-debug-apk
+          name: Shell-apk
           path: Shell-*.apk
 
       - name: Publish release

@@ -155,8 +155,8 @@ fun AppIcon(app: AppEntry, size: Dp, modifier: Modifier = Modifier, label: Strin
 @Composable
 fun AppMenu(app: AppEntry, state: ShellState, expanded: Boolean, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
-    val pinned = app.pkg in state.pinned
-    val hidden = app.pkg in state.hidden
+    val pinned = app.key in state.pinned
+    val hidden = app.key in state.hidden
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
@@ -166,9 +166,9 @@ fun AppMenu(app: AppEntry, state: ShellState, expanded: Boolean, onDismiss: () -
         border = BorderStroke(1.dp, Hair),
     ) {
         if (!hidden) {
-            MenuItem(if (pinned) "unpin" else "pin to dock") { state.togglePin(app.pkg); onDismiss() }
+            MenuItem(if (pinned) "unpin" else "pin to dock") { state.togglePin(app.key); onDismiss() }
         }
-        MenuItem(if (hidden) "unhide" else "hide") { state.toggleHidden(app.pkg); onDismiss() }
+        MenuItem(if (hidden) "unhide" else "hide") { state.toggleHidden(app.key); onDismiss() }
         MenuItem("app info") { openAppInfo(ctx, app.pkg); onDismiss() }
         if (!app.system) MenuItem("uninstall") { uninstallApp(ctx, app.pkg); onDismiss() }
     }

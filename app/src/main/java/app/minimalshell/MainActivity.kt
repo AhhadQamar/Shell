@@ -51,9 +51,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun LauncherRoot(homeSignal: Int) {
     val ctx = LocalContext.current
-    val apps by rememberApps()
+    val appsOrNull by rememberApps()
+    val apps = appsOrNull ?: emptyList()
     val wallpaperAccent by rememberAccent()
     val state = remember { ShellState(ctx) }
+    // migrate old keys and drop uninstalled apps from pins / hidden / counts after every load
+    LaunchedEffect(appsOrNull) { appsOrNull?.let { state.sync(it) } }
     val accent = if (state.accentOverride != 0) Color(state.accentOverride) else wallpaperAccent
 
     var drawerOpen by remember { mutableStateOf(false) }
@@ -77,6 +80,7 @@ fun LauncherRoot(homeSignal: Int) {
         Box(Modifier.fillMaxSize()) {
             Home(
                 apps, state, accent,
+                appsLoaded = appsOrNull != null,
                 onOpenDrawer = { drawerOpen = true },
                 onLongPress = { menuOpen = true },
             )
