@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Android 6-11: back up only Shell's own settings (pins, hidden apps, launch counts, accent). -->
+<!-- Android 6-11: back up only Shell's own settings (pins, hidden apps, launch counts, accent). Settings now live in the DataStore file; the old SharedPreferences entry is kept so older backups still restore and migrate. -->
 <full-backup-content>
     <include domain="sharedpref" path="shell.xml" />
+    <include domain="file" path="datastore/shell.preferences_pb" />
 </full-backup-content>

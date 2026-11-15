@@ -57,7 +57,7 @@ private val DOCK_CLEARANCE = 148.dp
 @Composable
 fun Home(
     apps: List<AppEntry>,
-    state: ShellState,
+    state: ShellViewModel,
     accent: Color,
     appsLoaded: Boolean,
     onOpenDrawer: () -> Unit,

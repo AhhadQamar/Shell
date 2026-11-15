@@ -153,7 +153,7 @@ fun AppIcon(app: AppEntry, size: Dp, modifier: Modifier = Modifier, label: Strin
 }
 
 @Composable
-fun AppMenu(app: AppEntry, state: ShellState, expanded: Boolean, onDismiss: () -> Unit) {
+fun AppMenu(app: AppEntry, state: ShellViewModel, expanded: Boolean, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
     val pinned = app.key in state.pinned
     val hidden = app.key in state.hidden

@@ -8,6 +8,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -27,9 +28,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 
 class MainActivity : ComponentActivity() {
+    private val vm: ShellViewModel by viewModels()
     private var homeSignal by mutableIntStateOf(0)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -38,7 +39,7 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(AndroidColor.TRANSPARENT),
         )
-        setContent { LauncherRoot(homeSignal) }
+        setContent { LauncherRoot(vm, homeSignal) }
     }
 
     // Home button pressed while we're already running: close everything and show home.
@@ -49,14 +50,9 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun LauncherRoot(homeSignal: Int) {
-    val ctx = LocalContext.current
-    val appsOrNull by rememberApps()
-    val apps = appsOrNull ?: emptyList()
+fun LauncherRoot(state: ShellViewModel, homeSignal: Int) {
+    val apps = state.apps ?: emptyList()
     val wallpaperAccent by rememberAccent()
-    val state = remember { ShellState(ctx) }
-    // migrate old keys and drop uninstalled apps from pins / hidden / counts after every load
-    LaunchedEffect(appsOrNull) { appsOrNull?.let { state.sync(it) } }
     val accent = if (state.accentOverride != 0) Color(state.accentOverride) else wallpaperAccent
 
     var drawerOpen by remember { mutableStateOf(false) }
@@ -77,33 +73,36 @@ fun LauncherRoot(homeSignal: Int) {
     }
 
     MaterialTheme(colorScheme = darkColorScheme()) {
-        Box(Modifier.fillMaxSize()) {
-            Home(
-                apps, state, accent,
-                appsLoaded = appsOrNull != null,
-                onOpenDrawer = { drawerOpen = true },
-                onLongPress = { menuOpen = true },
-            )
-            AnimatedVisibility(
-                visible = drawerOpen,
-                enter = slideInVertically(tween(260)) { it / 4 } + fadeIn(tween(200)),
-                exit = slideOutVertically(tween(200)) { it / 4 } + fadeOut(tween(160)),
-            ) {
-                Drawer(apps, state, accent) { drawerOpen = false }
-            }
-            AnimatedVisibility(visible = menuOpen, enter = fadeIn(), exit = fadeOut()) {
-                HomeMenu(
-                    accent,
-                    onShellSettings = { menuOpen = false; settingsOpen = true },
-                    onDismiss = { menuOpen = false },
+        // wait for the saved settings (usually a few ms) so the accent color and dock never flash defaults
+        if (state.ready) {
+            Box(Modifier.fillMaxSize()) {
+                Home(
+                    apps, state, accent,
+                    appsLoaded = state.apps != null,
+                    onOpenDrawer = { drawerOpen = true },
+                    onLongPress = { menuOpen = true },
                 )
-            }
-            AnimatedVisibility(
-                visible = settingsOpen,
-                enter = slideInVertically(tween(260)) { it } + fadeIn(tween(200)),
-                exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160)),
-            ) {
-                SettingsSheet(apps, state, accent) { settingsOpen = false }
+                AnimatedVisibility(
+                    visible = drawerOpen,
+                    enter = slideInVertically(tween(260)) { it / 4 } + fadeIn(tween(200)),
+                    exit = slideOutVertically(tween(200)) { it / 4 } + fadeOut(tween(160)),
+                ) {
+                    Drawer(apps, state, accent) { drawerOpen = false }
+                }
+                AnimatedVisibility(visible = menuOpen, enter = fadeIn(), exit = fadeOut()) {
+                    HomeMenu(
+                        accent,
+                        onShellSettings = { menuOpen = false; settingsOpen = true },
+                        onDismiss = { menuOpen = false },
+                    )
+                }
+                AnimatedVisibility(
+                    visible = settingsOpen,
+                    enter = slideInVertically(tween(260)) { it } + fadeIn(tween(200)),
+                    exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160)),
+                ) {
+                    SettingsSheet(apps, state, accent) { settingsOpen = false }
+                }
             }
         }
     }

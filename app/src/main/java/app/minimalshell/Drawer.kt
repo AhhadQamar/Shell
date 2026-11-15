@@ -96,7 +96,7 @@ private fun matchRank(a: AppEntry, s: String): Int = when {
  * Because a reversed list shows items bottom-to-top, each letter group is emitted last-app-first, header last,
  * so on screen it still reads: header, then apps A-Z downward.
  */
-private fun buildModel(apps: List<AppEntry>, q: String, s: ShellState): Model {
+private fun buildModel(apps: List<AppEntry>, q: String, s: ShellViewModel): Model {
     val items = mutableListOf<Item>()
     val index = linkedMapOf<Char, Int>()
     val first: AppEntry?
@@ -140,7 +140,7 @@ private fun buildModel(apps: List<AppEntry>, q: String, s: ShellState): Model {
  * visible above it. Tap or swipe down on the clear area, or press back, to close.
  */
 @Composable
-fun Drawer(apps: List<AppEntry>, state: ShellState, accent: Color, onClose: () -> Unit) {
+fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, onClose: () -> Unit) {
     val ctx = LocalContext.current
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -317,7 +317,7 @@ private fun SectionHeader(letter: Char, accent: Color) {
 
 /** Text-first row. The best search match gets a 3dp accent tick instead of a filled background. */
 @Composable
-private fun AppRow(app: AppEntry, state: ShellState, accent: Color, highlight: Boolean, onOpen: () -> Unit) {
+private fun AppRow(app: AppEntry, state: ShellViewModel, accent: Color, highlight: Boolean, onOpen: () -> Unit) {
     var menu by remember { mutableStateOf(false) }
     val hidden = app.key in state.hidden
     Box {
@@ -354,7 +354,7 @@ private fun AppRow(app: AppEntry, state: ShellState, accent: Color, highlight: B
 }
 
 @Composable
-private fun FrequentRow(apps: List<AppEntry>, state: ShellState, onOpen: (AppEntry) -> Unit) {
+private fun FrequentRow(apps: List<AppEntry>, state: ShellViewModel, onOpen: (AppEntry) -> Unit) {
     Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp)) {
         apps.forEach { app ->
             key(app.key) {

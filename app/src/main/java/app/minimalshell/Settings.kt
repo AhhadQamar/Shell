@@ -39,7 +39,7 @@ private val Presets = listOf(
 
 /** Same language as the drawer: wallpaper stays visible on top, text sits on a bottom fade, hairlines divide. */
 @Composable
-fun SettingsSheet(apps: List<AppEntry>, state: ShellState, accent: Color, onClose: () -> Unit) {
+fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, onClose: () -> Unit) {
     val hiddenApps = apps.filter { it.key in state.hidden }
     Box(
         Modifier
