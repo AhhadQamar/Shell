@@ -44,6 +44,10 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.ui.platform.LocalDensity
 
 /** Space the long-press menu leaves for the dock so the two never overlap. */
 private val DOCK_CLEARANCE = 148.dp
@@ -60,36 +64,43 @@ fun Home(
     state: ShellViewModel,
     accent: Color,
     appsLoaded: Boolean,
-    onOpenDrawer: () -> Unit,
+    drawer: DrawerState,
     onLongPress: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val tick by rememberTick()
-    var drag by remember { mutableFloatStateOf(0f) }
+    val shadeThreshold = with(LocalDensity.current) { 80.dp.toPx() }
+    val netDrag = remember { FloatArray(1) } // finger travel of the current swipe; positive = down
     val dock = state.pinned.mapNotNull { k -> apps.firstOrNull { it.key == k } }.take(MAX_PINNED)
 
     Box(
         Modifier
             .fillMaxSize()
             .pointerInput(Unit) {
-                detectTapGestures(onLongPress = {
-                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onLongPress()
-                })
-            }
-            .pointerInput(Unit) {
-                detectVerticalDragGestures(
-                    onDragStart = { drag = 0f },
-                    onDragEnd = {
-                        when {
-                            drag < -80.dp.toPx() -> onOpenDrawer() // swipe up: drawer
-                            drag > 80.dp.toPx() -> expandShade(ctx) // swipe down: notifications
-                        }
+                detectTapGestures(
+                    // does nothing unless the optional lock service is switched on in Shell's settings
+                    onDoubleTap = { ShellAccessibilityService.lockScreen() },
+                    onLongPress = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onLongPress()
                     },
-                    onVerticalDrag = { _, dy -> drag += dy },
                 )
             }
+            .draggable(
+                orientation = Orientation.Vertical,
+                state = rememberDraggableState { dy ->
+                    netDrag[0] += dy
+                    // swiping up pulls the drawer up under the finger; a net downward pull is left alone (shade)
+                    if (netDrag[0] < 0f || drawer.progress > 0f) drawer.dragBy(dy)
+                },
+                onDragStarted = { netDrag[0] = 0f },
+                onDragStopped = { velocity ->
+                    val pulledDrawer = drawer.progress > 0f
+                    drawer.settle(velocity)
+                    if (!pulledDrawer && netDrag[0] > shadeThreshold) expandShade(ctx) // swipe down: notifications
+                },
+            )
     ) {
         // The only scrim: a soft fade over the bottom third, behind the clock and dock.
         // The top two thirds of the wallpaper are untouched.
@@ -165,7 +176,7 @@ fun Home(
                         indication = null,
                         role = Role.Button,
                         onClickLabel = "Open apps",
-                    ) { onOpenDrawer() },
+                    ) { drawer.open() },
                 contentAlignment = Alignment.Center,
             ) {
                 Box(Modifier.width(22.dp).height(2.dp).background(accent.copy(0.7f), RoundedCornerShape(1.dp)))

@@ -32,6 +32,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import android.os.Build
 
 private val Presets = listOf(
     0xFFFF9E6B, 0xFF8AB4F8, 0xFF7BD88F, 0xFFE58AC0, 0xFFC9A7FF, 0xFFFFD166,
@@ -40,7 +47,14 @@ private val Presets = listOf(
 /** Same language as the drawer: wallpaper stays visible on top, text sits on a bottom fade, hairlines divide. */
 @Composable
 fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, onClose: () -> Unit) {
+    val ctx = LocalContext.current
     val hiddenApps = apps.filter { it.key in state.hidden }
+    // re-check when coming back from the system screen where the default home app is chosen
+    var isDefault by remember { mutableStateOf(isDefaultHome(ctx)) }
+    LifecycleResumeEffect(Unit) {
+        isDefault = isDefaultHome(ctx)
+        onPauseOrDispose { }
+    }
     Box(
         Modifier
             .fillMaxSize()
@@ -66,6 +80,20 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
             Text("shell / settings", style = ink(12.sp, accent, mono = true, tracking = 1.sp))
             Spacer(Modifier.height(10.dp))
             Hairline(Modifier.fillMaxWidth())
+
+            if (!isDefault) {
+                Row(
+                    Modifier.fillMaxWidth().clickable { openDefaultHomeSettings(ctx) }.padding(vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("make shell your home", style = ink(16.sp))
+                        Text("the home button and app shortcuts need it", style = ink(11.sp, Dim, mono = true))
+                    }
+                    Text("set ›", style = ink(13.sp, accent, mono = true))
+                }
+                Hairline(Modifier.fillMaxWidth())
+            }
 
             // accent
             Spacer(Modifier.height(18.dp))
@@ -99,6 +127,26 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
             }
             SettingToggle("type to search", "open the keyboard as soon as the drawer opens", state.autoKeyboard, accent) {
                 state.updateAutoKeyboard(it)
+            }
+
+            // optional accessibility service: double-tap to lock (needs Android 9+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                val lockOn = ShellAccessibilityService.running
+                Spacer(Modifier.height(22.dp))
+                Row(
+                    Modifier.fillMaxWidth().clickable { openAccessibilitySettings(ctx) },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("double-tap to lock", style = ink(16.sp))
+                        Text(
+                            if (lockOn) "double-tap the home screen to lock; also opens the shade reliably"
+                            else "needs shell's lock service, switched on in accessibility settings",
+                            style = ink(11.sp, Dim, mono = true),
+                        )
+                    }
+                    Text(if (lockOn) "on" else "set ›", style = ink(13.sp, accent, mono = true))
+                }
             }
 
             // hidden apps: finally manageable without having to search for them

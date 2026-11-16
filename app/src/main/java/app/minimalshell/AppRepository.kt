@@ -19,6 +19,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Where the list of installed launcher apps comes from. [load] builds the list (labels + ready-to-draw icons, sorted),
@@ -46,6 +48,37 @@ class AppRepository(private val app: Application) {
             .filterNotNull()
             .sortedWith(Comparator<AppEntry> { a, b -> collator.compare(a.label, b.label) })
     }
+
+    /**
+     * The app's own quick actions ("new chat", "selfie"...), as shown by the long-press menu. The system only
+     * hands these to the default home app; for anyone else the call is refused and this returns an empty list.
+     */
+    suspend fun shortcuts(app: AppEntry): List<AppShortcut> = withContext(Dispatchers.Default) {
+        try {
+            if (!launcherApps.hasShortcutHost()) return@withContext emptyList()
+            val query = LauncherApps.ShortcutQuery()
+                .setPackage(app.pkg)
+                .setActivity(app.component)
+                .setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST)
+            launcherApps.getShortcuts(query, me).orEmpty()
+                .filter { it.isEnabled }
+                .sortedBy { it.rank }
+                .take(MAX_SHORTCUTS)
+                .map { AppShortcut(it.id, it.getPackage(), it.shortLabel?.toString() ?: it.id) }
+        } catch (e: Exception) {
+            Log.w("Shell", "no shortcuts for ${app.pkg}", e)
+            emptyList()
+        }
+    }
+
+    fun startShortcut(s: AppShortcut): Boolean =
+        try {
+            launcherApps.startShortcut(s.pkg, s.id, null, null, me)
+            true
+        } catch (e: Exception) {
+            Log.w("Shell", "couldn't start shortcut ${s.id}", e)
+            false
+        }
 
     /**
      * Emits whenever an app was installed, removed, updated, enabled/disabled or (un)suspended.
@@ -83,3 +116,8 @@ private fun toEntry(info: LauncherActivityInfo, pm: PackageManager, px: Int, den
             system = (info.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0,
         )
     }.onFailure { Log.w("Shell", "skipping ${info.componentName}", it) }.getOrNull()
+
+private const val MAX_SHORTCUTS = 4
+
+/** One quick action of an app, e.g. "New message". Only the text is shown, in keeping with the rest of the UI. */
+data class AppShortcut(val id: String, val pkg: String, val label: String)

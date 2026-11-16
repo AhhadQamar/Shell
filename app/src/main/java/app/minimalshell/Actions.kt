@@ -8,6 +8,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
+import android.content.pm.PackageManager
 
 private fun newTask(i: Intent): Intent = i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
@@ -67,9 +68,27 @@ fun copyToClipboard(ctx: Context, text: String) {
 /** Pulls the notification shade down. Uses a hidden API, so it quietly does nothing if the OS blocks it. */
 @SuppressLint("WrongConstant")
 fun expandShade(ctx: Context) {
+    // the accessibility service does this properly; the reflection below is only a fallback for when it is off
+    if (ShellAccessibilityService.openShade()) return
     try {
         val sbm = ctx.getSystemService("statusbar")
         Class.forName("android.app.StatusBarManager").getMethod("expandNotificationsPanel").invoke(sbm)
     } catch (_: Throwable) {
     }
+}
+
+/** True when Shell is what the Home button opens (and so is allowed to read other apps' shortcuts). */
+fun isDefaultHome(ctx: Context): Boolean {
+    val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+    val info = ctx.packageManager.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)
+    return info?.activityInfo?.packageName == ctx.packageName
+}
+
+/** The system screen where the default home app is chosen. */
+fun openDefaultHomeSettings(ctx: Context) {
+    safeStart(ctx, Intent(Settings.ACTION_HOME_SETTINGS))
+}
+
+fun openAccessibilitySettings(ctx: Context) {
+    safeStart(ctx, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
 }

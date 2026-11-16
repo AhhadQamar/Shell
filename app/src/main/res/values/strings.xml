@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="lock_service_description">Lets Shell lock the screen when you double-tap the home screen, and pull down the notification shade. It does not read your screen or anything you type.</string>
+</resources>

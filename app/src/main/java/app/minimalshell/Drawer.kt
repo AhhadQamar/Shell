@@ -67,6 +67,18 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedScroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedScroll.NestedScrollSource
+import androidx.compose.ui.input.nestedScroll.nestedScroll
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.Velocity
+import kotlinx.coroutines.flow.first
 
 private sealed interface Item {
     data class Calc(val result: String) : Item
@@ -136,11 +148,34 @@ private fun buildModel(apps: List<AppEntry>, q: String, s: ShellViewModel): Mode
 }
 
 /**
+ * Lets a downward drag that the list can't use (it is already at its far end, or has nothing to scroll)
+ * pull the whole drawer down, and lets an upward drag push it back up before the list moves.
+ * The list is bottom-anchored (A at the bottom, Z at the top), so dragging down scrolls toward Z first;
+ * only when it runs out does the drawer start to close.
+ */
+private fun drawerNestedScroll(drawer: DrawerState) = object : NestedScrollConnection {
+    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset =
+        if (available.y < 0f && drawer.progress < 1f) Offset(0f, drawer.dragBy(available.y)) else Offset.Zero
+
+    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset =
+        // only a finger drag, never a fling that happens to reach the end of the list
+        if (available.y > 0f && source == NestedScrollSource.UserInput) Offset(0f, drawer.dragBy(available.y)) else Offset.Zero
+
+    override suspend fun onPreFling(available: Velocity): Velocity =
+        if (drawer.progress < 1f) {
+            drawer.settle(available.y) // the panel was pulled away from the list's drag, so it takes the fling too
+            available
+        } else {
+            Velocity.Zero
+        }
+}
+
+/**
  * Bottom-anchored panel: it is only as tall as its content (max 75% of the screen), so the wallpaper stays
- * visible above it. Tap or swipe down on the clear area, or press back, to close.
+ * visible above it. Swipe down anywhere, tap the clear area, or press back to close.
  */
 @Composable
-fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, onClose: () -> Unit) {
+fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: DrawerState) {
     val ctx = LocalContext.current
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -159,7 +194,7 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, onClose: 
 
     fun open(app: AppEntry) {
         state.launch(app)
-        onClose()
+        drawer.snapClosed() // no closing animation underneath the app's own launch animation
     }
 
     fun copy(text: String) {
@@ -167,11 +202,30 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, onClose: 
         if (Build.VERSION.SDK_INT < 33) Toast.makeText(ctx, "Copied", Toast.LENGTH_SHORT).show()
     }
 
-    // optional "type to search": open the keyboard as soon as the drawer appears
-    LaunchedEffect(Unit) {
-        if (state.autoKeyboard) {
-            runCatching { focusRequester.requestFocus() }
-            keyboard?.show()
+    val showing = drawer.showing
+    val dragState = rememberDraggableState { dy -> drawer.dragBy(dy) }
+    val drawerScroll = remember(drawer) { drawerNestedScroll(drawer) }
+
+    LaunchedEffect(drawer.wantsOpen) {
+        if (drawer.wantsOpen) {
+            // optional "type to search": wait until the drawer has finished sliding in, so the keyboard's own
+            // animation doesn't compete with it
+            if (state.autoKeyboard) {
+                snapshotFlow { drawer.progress }.first { it >= 1f }
+                runCatching { focusRequester.requestFocus() }
+                keyboard?.show()
+            }
+        } else {
+            keyboard?.hide()
+            focus.clearFocus()
+        }
+    }
+
+    // fully closed: forget the query and go back to the top, ready for next time
+    LaunchedEffect(showing) {
+        if (!showing) {
+            query = ""
+            listState.scrollToItem(0)
         }
     }
 
@@ -189,19 +243,29 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, onClose: 
     Box(
         Modifier
             .fillMaxSize()
-            .pointerInput(Unit) { detectTapGestures { onClose() } }
-            .pointerInput(Unit) {
-                var d = 0f
-                detectVerticalDragGestures(
-                    onDragStart = { d = 0f },
-                    onDragEnd = { if (d > 60.dp.toPx()) onClose() },
-                    onVerticalDrag = { _, dy -> d += dy },
-                )
-            }
+            // While parked off-screen the drawer must not catch touches meant for Home or show up for TalkBack.
+            .then(if (showing) Modifier else Modifier.clearAndSetSemantics { })
+            .then(
+                if (showing) {
+                    Modifier
+                        .pointerInput(Unit) { detectTapGestures { drawer.close() } } // tap the clear area
+                        .draggable(
+                            orientation = Orientation.Vertical,
+                            state = dragState, // swipe down anywhere that isn't the list: the panel follows the finger
+                            onDragStopped = { velocity -> drawer.settle(velocity) },
+                        )
+                } else {
+                    Modifier
+                }
+            )
+            .nestedScroll(drawerScroll) // swipe down on the list once it can't scroll any further
     ) {
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
+                // slides in and out by translation only: no layout or recomposition while it moves
+                .graphicsLayer { translationY = (1f - drawer.progress) * size.height }
+                .onSizeChanged { drawer.travelPx = it.height.toFloat() }
                 .fillMaxWidth()
                 .heightIn(max = panelMax)
                 .background(
@@ -245,7 +309,7 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, onClose: 
                                 ) { open(item.app) }
                                 is Item.Web -> WebRow(item.query, accent) {
                                     webSearch(ctx, item.query)
-                                    onClose()
+                                    drawer.snapClosed()
                                 }
                             }
                         }
@@ -284,7 +348,7 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, onClose: 
                         when {
                             calcResult != null -> copy(calcResult)
                             model.first != null -> open(model.first)
-                            q.isNotEmpty() -> { webSearch(ctx, q); onClose() }
+                            q.isNotEmpty() -> { webSearch(ctx, q); drawer.snapClosed() }
                         }
                     }),
                     modifier = Modifier.weight(1f).focusRequester(focusRequester),

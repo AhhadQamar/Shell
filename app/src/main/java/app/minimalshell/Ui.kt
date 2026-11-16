@@ -40,6 +40,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.runtime.produceState
+import androidx.compose.foundation.layout.fillMaxWidth
 
 // ---------------------------------------------------------------------------
 // Design tokens. See DESIGN.md: the wallpaper is never dimmed globally, so
@@ -155,8 +157,13 @@ fun AppIcon(app: AppEntry, size: Dp, modifier: Modifier = Modifier, label: Strin
 @Composable
 fun AppMenu(app: AppEntry, state: ShellViewModel, expanded: Boolean, onDismiss: () -> Unit) {
     val ctx = LocalContext.current
+    val drawer = LocalDrawerState.current
     val pinned = app.key in state.pinned
     val hidden = app.key in state.hidden
+    // the app's own quick actions; loaded in the background while the menu is open, so opening it is never delayed
+    val shortcuts by produceState(emptyList<AppShortcut>(), app.key, expanded) {
+        value = if (expanded) state.shortcutsFor(app) else emptyList()
+    }
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
@@ -165,6 +172,10 @@ fun AppMenu(app: AppEntry, state: ShellViewModel, expanded: Boolean, onDismiss: 
         tonalElevation = 0.dp,
         border = BorderStroke(1.dp, Hair),
     ) {
+        shortcuts.forEach { s ->
+            MenuItem(s.label) { state.startShortcut(s); drawer?.snapClosed(); onDismiss() }
+        }
+        if (shortcuts.isNotEmpty()) Hairline(Modifier.fillMaxWidth())
         if (!hidden) {
             MenuItem(if (pinned) "unpin" else "pin to dock") { state.togglePin(app.key); onDismiss() }
         }

@@ -88,6 +88,12 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
         persist(counts) { saveCounts(it) }
     }
 
+    suspend fun shortcutsFor(app: AppEntry): List<AppShortcut> = repo.shortcuts(app)
+
+    fun startShortcut(s: AppShortcut) {
+        if (!repo.startShortcut(s)) Toast.makeText(ctx, "Couldn't open that", Toast.LENGTH_SHORT).show()
+    }
+
     private fun isInstalled(pkg: String): Boolean =
         try {
             ctx.packageManager.getApplicationInfo(pkg, 0)
