@@ -73,9 +73,9 @@ import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedScroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedScroll.NestedScrollSource
-import androidx.compose.ui.input.nestedScroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.flow.first

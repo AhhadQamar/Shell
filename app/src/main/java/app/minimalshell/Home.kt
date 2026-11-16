@@ -49,8 +49,11 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.ui.platform.LocalDensity
 
+/** Size of the pinned icons on the dock. Change this one number to resize them. */
+private val DOCK_ICON = 40.dp
+
 /** Space the long-press menu leaves for the dock so the two never overlap. */
-private val DOCK_CLEARANCE = 148.dp
+private val DOCK_CLEARANCE = 136.dp
 
 /**
  * Home is built from two axes that meet in an L-shaped corner above the dock:
@@ -144,7 +147,7 @@ fun Home(
             // dock: bare icons sitting on the horizon, no backing panel
             Row(
                 // min height = icon size, so the row doesn't jump when icons appear after the first load
-                Modifier.fillMaxWidth().padding(vertical = 18.dp).heightIn(min = 52.dp),
+                Modifier.fillMaxWidth().padding(vertical = 18.dp).heightIn(min = DOCK_ICON),
                 horizontalArrangement = if (dock.isEmpty()) Arrangement.Start else Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -157,7 +160,7 @@ fun Home(
                         var menu by remember { mutableStateOf(false) }
                         Box {
                             AppIcon(
-                                app, 52.dp,
+                                app, DOCK_ICON,
                                 Modifier.pressable(onClick = { state.launch(app) }, onLongClick = { menu = true }),
                             )
                             AppMenu(app, state, menu) { menu = false }

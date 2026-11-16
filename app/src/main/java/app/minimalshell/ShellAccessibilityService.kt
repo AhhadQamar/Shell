@@ -47,8 +47,8 @@ class ShellAccessibilityService : AccessibilityService() {
         /** Locks the screen (Android 9+). Returns false if the service is off or the system refused. */
         fun lockScreen(): Boolean =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.P &&
-                instance?.performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN) == true
+                instance?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN) == true
 
-        fun openShade(): Boolean = instance?.performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS) == true
+        fun openShade(): Boolean = instance?.performGlobalAction(AccessibilityService.GLOBAL_ACTION_NOTIFICATIONS) == true
     }
 }
