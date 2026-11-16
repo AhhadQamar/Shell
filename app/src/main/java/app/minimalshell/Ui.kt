@@ -48,9 +48,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 // legibility comes from a soft text shadow (Lift) instead of dark panels.
 // ---------------------------------------------------------------------------
 
-val Dim = Color.White.copy(alpha = 0.64f)
-val Hair = Color.White.copy(alpha = 0.18f)
+// Palette, taken from the app icon: warm shell on deep sea. Text is sand, not pure white; the accent is peach
+// unless the user picks another colour (or "follow the wallpaper") in settings.
+const val PEACH_ARGB = 0xFFFFB48A.toInt()
+val Peach = Color(PEACH_ARGB)
+val Sand = Color(0xFFF4E9DC)
+val Sea = Color(0xFF0F1B21)
+
+val Dim = Sand.copy(alpha = 0.7f)
+val Hair = Sand.copy(alpha = 0.18f)
 val Mono = FontFamily.Monospace
+/** The system serif: the clock and the drawer's section letters use it, everything else stays sans. */
+val Serif = FontFamily.Serif
 
 /** Soft dark halo under text: keeps type readable on any wallpaper without a backing panel. */
 val Lift = Shadow(color = Color.Black.copy(alpha = 0.55f), offset = Offset(0f, 2f), blurRadius = 14f)
@@ -58,15 +67,20 @@ val Lift = Shadow(color = Color.Black.copy(alpha = 0.55f), offset = Offset(0f, 2
 /** The one text-style factory: every piece of text in Shell goes through this. */
 fun ink(
     size: TextUnit,
-    color: Color = Color.White,
+    color: Color = Sand,
     weight: FontWeight = FontWeight.Normal,
     mono: Boolean = false,
     tracking: TextUnit = TextUnit.Unspecified,
+    serif: Boolean = false,
 ) = TextStyle(
     color = color,
     fontSize = size,
     fontWeight = weight,
-    fontFamily = if (mono) Mono else FontFamily.Default,
+    fontFamily = when {
+        mono -> Mono
+        serif -> Serif
+        else -> FontFamily.Default
+    },
     letterSpacing = tracking,
     shadow = Lift,
 )
@@ -168,7 +182,7 @@ fun AppMenu(app: AppEntry, state: ShellViewModel, expanded: Boolean, onDismiss: 
         expanded = expanded,
         onDismissRequest = onDismiss,
         shape = RoundedCornerShape(6.dp),
-        containerColor = Color(0xF2121416),
+        containerColor = Sea.copy(alpha = 0.95f),
         tonalElevation = 0.dp,
         border = BorderStroke(1.dp, Hair),
     ) {
@@ -188,7 +202,7 @@ fun AppMenu(app: AppEntry, state: ShellViewModel, expanded: Boolean, onDismiss: 
 @Composable
 private fun MenuItem(label: String, onClick: () -> Unit) {
     DropdownMenuItem(
-        text = { Text(label, style = TextStyle(color = Color.White, fontSize = 14.sp, fontFamily = Mono)) },
+        text = { Text(label, style = TextStyle(color = Sand, fontSize = 14.sp, fontFamily = Mono)) },
         onClick = onClick,
     )
 }

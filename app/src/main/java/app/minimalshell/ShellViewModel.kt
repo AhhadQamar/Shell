@@ -49,7 +49,7 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var counts by mutableStateOf<Map<String, Int>>(emptyMap())
         private set
-    var accentOverride by mutableIntStateOf(0)
+    var accentOverride by mutableIntStateOf(PEACH_ARGB)
         private set
     var showFrequent by mutableStateOf(true)
         private set

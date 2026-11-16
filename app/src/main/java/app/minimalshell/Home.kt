@@ -53,7 +53,7 @@ import androidx.compose.ui.platform.LocalDensity
 private val DOCK_ICON = 40.dp
 
 /** Space the long-press menu leaves for the dock so the two never overlap. */
-private val DOCK_CLEARANCE = 136.dp
+private val DOCK_CLEARANCE = 150.dp
 
 /**
  * Home is built from two axes that meet in an L-shaped corner above the dock:
@@ -112,7 +112,7 @@ fun Home(
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .fillMaxHeight(0.38f)
-                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.5f))))
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Sea.copy(0.6f))))
         )
 
         Column(
@@ -131,49 +131,48 @@ fun Home(
 
             Spacer(Modifier.weight(1f))
 
-            // clock (left) and battery spine (right edge); the spine is as tall as the clock block
-            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), verticalAlignment = Alignment.Bottom) {
-                Column(Modifier.weight(1f)) {
-                    Text(tick.time, style = ink(76.sp, weight = FontWeight.Light))
-                    tick.alarm?.let {
-                        Text(it, style = ink(12.sp, Dim, mono = true), modifier = Modifier.padding(top = 2.dp, bottom = 14.dp))
-                    }
-                }
-                BatterySpine(tick.battery, accent)
+            // the clock, with the shell's seven ridges beneath it standing for the days of the week
+            Text(tick.time, style = ink(72.sp, weight = FontWeight.Light, serif = true))
+            tick.alarm?.let {
+                Text(it, style = ink(12.sp, Dim, mono = true), modifier = Modifier.padding(top = 2.dp))
+            }
+            Row(Modifier.padding(top = 12.dp, bottom = 20.dp), verticalAlignment = Alignment.Bottom) {
+                ShellFan(today = tick.weekDay, accent = accent, modifier = Modifier.size(58.dp, 30.dp))
+                Spacer(Modifier.width(14.dp))
+                Text("week ${tick.weekNumber}", style = ink(12.sp, Dim, mono = true))
             }
 
-            DayHorizon(tick.dayFraction, accent)
-
-            // dock: bare icons sitting on the horizon, no backing panel
-            Row(
-                // min height = icon size, so the row doesn't jump when icons appear after the first load
-                Modifier.fillMaxWidth().padding(vertical = 18.dp).heightIn(min = DOCK_ICON),
-                horizontalArrangement = if (dock.isEmpty()) Arrangement.Start else Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.CenterVertically,
+            // dock: icons rest on an arc, the way the shell's ridges fan out
+            Box(
+                // reserve the arc's height up front, so nothing jumps when icons appear after the first load
+                Modifier.fillMaxWidth().heightIn(min = DOCK_ICON + 50.dp),
+                contentAlignment = Alignment.TopCenter,
             ) {
-                // only suggest pinning once we know there really are no pins, not while apps are still loading
                 if (appsLoaded && state.pinned.isEmpty()) {
                     Text("long-press an app in the drawer to pin it", style = ink(12.sp, Dim, mono = true))
-                }
-                dock.forEach { app ->
-                    key(app.key) { // keeps each icon's menu state with its own app when the dock changes
-                        var menu by remember { mutableStateOf(false) }
-                        Box {
-                            AppIcon(
-                                app, DOCK_ICON,
-                                Modifier.pressable(onClick = { state.launch(app) }, onLongClick = { menu = true }),
-                            )
-                            AppMenu(app, state, menu) { menu = false }
+                } else {
+                    ArcDock(Modifier.fillMaxWidth()) {
+                        dock.forEach { app ->
+                            key(app.key) { // keeps each icon's menu state with its own app when the dock changes
+                                var menu by remember { mutableStateOf(false) }
+                                Box {
+                                    AppIcon(
+                                        app, DOCK_ICON,
+                                        Modifier.pressable(onClick = { state.launch(app) }, onLongClick = { menu = true }),
+                                    )
+                                    AppMenu(app, state, menu) { menu = false }
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // drawer handle: tiny, but a real 36dp-tall touch target with a screen-reader label
+            // handle: a small fan of its own; tap it (or swipe up) to open the drawer
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .height(36.dp)
+                    .height(40.dp)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -182,38 +181,12 @@ fun Home(
                     ) { drawer.open() },
                 contentAlignment = Alignment.Center,
             ) {
-                Box(Modifier.width(22.dp).height(2.dp).background(accent.copy(0.7f), RoundedCornerShape(1.dp)))
+                ShellFan(today = 3, accent = accent, modifier = Modifier.size(34.dp, 18.dp), showPast = false, ridgeWidth = 2.dp)
             }
         }
     }
 }
 
-/** Vertical gauge: 2dp track, accent fill growing up from the bottom (where it meets the horizon). */
-@Composable
-private fun BatterySpine(percent: Int, accent: Color) {
-    Box(Modifier.width(2.dp).fillMaxHeight().background(Hair)) {
-        Box(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .fillMaxHeight((percent / 100f).coerceIn(0.02f, 1f))
-                .background(accent)
-        )
-    }
-}
-
-/** Horizontal line across the day: accent up to now, with a dot at the current moment. */
-@Composable
-private fun DayHorizon(fraction: Float, accent: Color) {
-    val f = fraction.coerceIn(0.02f, 1f)
-    Box(Modifier.fillMaxWidth().height(10.dp), contentAlignment = Alignment.CenterStart) {
-        Box(Modifier.fillMaxWidth().height(1.dp).background(Hair))
-        Box(Modifier.fillMaxWidth(f).height(1.dp).background(accent.copy(0.9f)))
-        Box(Modifier.fillMaxWidth(f), contentAlignment = Alignment.CenterEnd) {
-            Box(Modifier.size(7.dp).background(accent, CircleShape))
-        }
-    }
-}
 
 /** Long-press on empty home space: a bare text list, no card. */
 @Composable
@@ -222,7 +195,7 @@ fun HomeMenu(accent: Color, onShellSettings: () -> Unit, onDismiss: () -> Unit) 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(0.7f))))
+            .background(Brush.verticalGradient(listOf(Color.Transparent, Sea.copy(0.78f))))
             .pointerInput(Unit) { detectTapGestures { onDismiss() } }
             .windowInsetsPadding(WindowInsets.systemBars),
         contentAlignment = Alignment.BottomStart,

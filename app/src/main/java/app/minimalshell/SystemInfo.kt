@@ -27,10 +27,12 @@ import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.time.temporal.IsoFields
+import java.time.temporal.WeekFields
 
 // ---------- wallpaper accent ----------
 
-private val FallbackAccent = Color(0xFF8AB4F8)
+private val FallbackAccent = Peach
 
 /** Picks the most vivid of the wallpaper's primary/secondary/tertiary colors (saturation + brightness score). */
 fun pickAccent(ctx: Context): Color {
@@ -69,7 +71,8 @@ data class Tick(
     val battery: Int,
     val charging: Boolean,
     val alarm: String?,
-    val dayFraction: Float, // 0..1, how far through today we are (drives the horizon line on Home)
+    val weekDay: Int, // 0..6, which day of the week it is, counting from the locale's first day (lights a ridge of the fan)
+    val weekNumber: Int, // ISO week of the year
 )
 
 fun readTick(ctx: Context): Tick {
@@ -99,7 +102,8 @@ fun readTick(ctx: Context): Tick {
         charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
             status == BatteryManager.BATTERY_STATUS_FULL,
         alarm = alarm,
-        dayFraction = now.toLocalTime().toSecondOfDay() / 86_400f,
+        weekDay = now.toLocalDate().get(WeekFields.of(Locale.getDefault()).dayOfWeek()) - 1,
+        weekNumber = now.toLocalDate().get(IsoFields.WEEK_OF_WEEK_BASED_YEAR),
     )
 }
 

@@ -39,7 +39,7 @@ class SettingsStore(context: Context) {
         val hidden: Set<String> = emptySet(),
         val counts: Map<String, Int> = emptyMap(),
         /** 0 means "use the wallpaper". */
-        val accent: Int = 0,
+        val accent: Int = PEACH_ARGB,
         val autoKeyboard: Boolean = false,
         val showFrequent: Boolean = true,
     )
@@ -58,7 +58,7 @@ class SettingsStore(context: Context) {
             pinned = p[PINNED].orEmpty().split(",").filter { it.isNotBlank() },
             hidden = p[HIDDEN].orEmpty(),
             counts = parseCounts(p[COUNTS].orEmpty()),
-            accent = p[ACCENT] ?: 0,
+            accent = p[ACCENT] ?: PEACH_ARGB,
             autoKeyboard = p[AUTO_KEYBOARD] ?: false,
             showFrequent = p[FREQUENT] ?: true,
         )

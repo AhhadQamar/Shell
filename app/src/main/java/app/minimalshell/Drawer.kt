@@ -79,6 +79,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.flow.first
+import androidx.compose.foundation.layout.size
 
 private sealed interface Item {
     data class Calc(val result: String) : Item
@@ -270,8 +271,8 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                 .background(
                     Brush.verticalGradient(
                         0f to Color.Transparent,
-                        0.3f to Color.Black.copy(0.72f),
-                        1f to Color.Black.copy(0.9f),
+                        0.3f to Sea.copy(0.78f),
+                        1f to Sea.copy(0.94f),
                     )
                 )
                 .pointerInput(Unit) { detectTapGestures { } } // taps on the panel itself don't close it
@@ -325,9 +326,9 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                 }
             }
 
-            // the "horizon" of the drawer: an accent stub + hairline that the query sits on
-            Row(Modifier.fillMaxWidth().padding(end = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.width(28.dp).height(2.dp).background(accent))
+            // the "horizon" of the drawer: a small shell resting on a hairline, with the query below it
+            Row(Modifier.fillMaxWidth().padding(end = 14.dp), verticalAlignment = Alignment.Bottom) {
+                ShellFan(today = 3, accent = accent, modifier = Modifier.size(30.dp, 16.dp), showPast = false, ridgeWidth = 2.dp)
                 Hairline(Modifier.weight(1f))
             }
             Row(
@@ -341,7 +342,7 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                     onValueChange = { query = it },
                     singleLine = true,
                     textStyle = TextStyle(
-                        color = Color.White, fontSize = 17.sp,
+                        color = Sand, fontSize = 17.sp,
                         fontFamily = Mono, shadow = Lift,
                     ),
                     cursorBrush = SolidColor(accent),
@@ -375,8 +376,8 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
 @Composable
 private fun SectionHeader(letter: Char, accent: Color) {
     Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(letter.toString(), style = ink(12.sp, accent, mono = true, tracking = 1.sp))
-        Spacer(Modifier.width(10.dp))
+        Text(letter.toString(), style = ink(22.sp, accent, serif = true))
+        Spacer(Modifier.width(12.dp))
         Hairline(Modifier.weight(1f))
     }
 }
@@ -407,7 +408,7 @@ private fun AppRow(app: AppEntry, state: ShellViewModel, accent: Color, highligh
                 app.label,
                 style = ink(
                     17.sp,
-                    Color.White.copy(if (hidden) 0.5f else 0.92f),
+                    Sand.copy(if (hidden) 0.5f else 0.94f),
                     if (highlight) FontWeight.Medium else FontWeight.Normal,
                 ),
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -433,7 +434,7 @@ private fun FrequentRow(apps: List<AppEntry>, state: ShellViewModel, onOpen: (Ap
                         AppIcon(app, 48.dp, label = null)
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            app.label, style = ink(11.sp, Color.White.copy(0.85f)),
+                            app.label, style = ink(11.sp, Sand.copy(0.85f)),
                             maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
                         )
                     }
@@ -527,13 +528,13 @@ private fun SpineRail(letters: List<Char>, accent: Color, onJump: (Char) -> Unit
             horizontalAlignment = Alignment.End,
         ) {
             for (i in letters.indices.reversed()) {
-                Text(letters[i].toString(), style = ink(10.sp, if (i == active) accent else Dim, mono = true))
+                Text(letters[i].toString(), style = ink(11.sp, if (i == active) accent else Dim, serif = true))
             }
         }
         if (active >= 0) {
             Text(
                 letters[active].toString(),
-                style = ink(48.sp, accent, FontWeight.Light, mono = true),
+                style = ink(56.sp, accent, FontWeight.Light, serif = true),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset {

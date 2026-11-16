@@ -89,7 +89,7 @@ fun LauncherRoot(state: ShellViewModel, homeSignal: Int) {
                         onLongPress = { menuOpen = true },
                     )
                     // soft dim behind the drawer, growing with it; no pointer handling, so it never blocks touches
-                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = drawer.progress * 0.4f }.background(Color.Black))
+                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = drawer.progress * 0.4f }.background(Sea))
                     // always composed and parked just off-screen: opening never has to build it from scratch
                     Drawer(apps, state, accent, drawer)
                     AnimatedVisibility(visible = menuOpen, enter = fadeIn(), exit = fadeOut()) {

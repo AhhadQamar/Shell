@@ -41,7 +41,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import android.os.Build
 
 private val Presets = listOf(
-    0xFFFF9E6B, 0xFF8AB4F8, 0xFF7BD88F, 0xFFE58AC0, 0xFFC9A7FF, 0xFFFFD166,
+    0xFFFFB48A, 0xFFFF9E6B, 0xFF8AB4F8, 0xFF7BD88F, 0xFFE58AC0, 0xFFC9A7FF, 0xFFFFD166,
 ).map { it.toInt() }
 
 /** Same language as the drawer: wallpaper stays visible on top, text sits on a bottom fade, hairlines divide. */
@@ -61,8 +61,8 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
             .background(
                 Brush.verticalGradient(
                     0f to Color.Transparent,
-                    0.35f to Color.Black.copy(0.75f),
-                    1f to Color.Black.copy(0.92f),
+                    0.35f to Sea.copy(0.8f),
+                    1f to Sea.copy(0.94f),
                 )
             )
             .pointerInput(Unit) { detectTapGestures { onClose() } }
@@ -104,17 +104,17 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
                 Box(
                     Modifier
                         .size(32.dp)
-                        .border(1.5.dp, if (auto) Color.White else Dim, RoundedCornerShape(5.dp))
+                        .border(1.5.dp, if (auto) Sand else Dim, RoundedCornerShape(5.dp))
                         .clickable { state.setAccent(0) },
                     contentAlignment = Alignment.Center,
-                ) { Text("A", style = ink(13.sp, if (auto) Color.White else Dim, mono = true)) }
+                ) { Text("A", style = ink(13.sp, if (auto) Sand else Dim, mono = true)) }
                 Presets.forEach { argb ->
                     val selected = state.accentOverride == argb
                     Box(
                         Modifier
                             .size(32.dp)
                             .background(Color(argb), RoundedCornerShape(5.dp))
-                            .border(if (selected) 2.dp else 0.dp, if (selected) Color.White else Color.Transparent, RoundedCornerShape(5.dp))
+                            .border(if (selected) 2.dp else 0.dp, if (selected) Sand else Color.Transparent, RoundedCornerShape(5.dp))
                             .clickable { state.setAccent(argb) }
                     )
                 }
@@ -190,10 +190,10 @@ private fun SettingToggle(title: String, subtitle: String, checked: Boolean, acc
             checked = checked,
             onCheckedChange = onChange,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = Color(0xFF101214),
+                checkedThumbColor = Sea,
                 checkedTrackColor = accent,
                 uncheckedThumbColor = Dim,
-                uncheckedTrackColor = Color.White.copy(0.1f),
+                uncheckedTrackColor = Sand.copy(0.1f),
                 uncheckedBorderColor = Color.Transparent,
             ),
         )
