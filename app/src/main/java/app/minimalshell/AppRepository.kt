@@ -27,29 +27,17 @@ import kotlinx.coroutines.withContext
  * Where the list of installed launcher apps comes from. [load] builds the list (labels + ready-to-draw icons, sorted),
  * [changes] says when it is out of date. Nothing here knows about the UI.
  *
- * Uses the system's LauncherApps service, the API made for launchers: it reports exactly what a launcher should show,
- * tells us about installs, removals, updates and suspended apps without hand-rolled broadcast filtering, and is the
- * foundation for app shortcuts and work/private profiles later.
+ * Uses the system's LauncherApps service: it reports what a launcher should show and notifies us about app changes.
  */
 class AppRepository(private val app: Application) {
     private val launcherApps: LauncherApps = app.getSystemService(LauncherApps::class.java)
     private val me: UserHandle = Process.myUserHandle() // main profile only, for now
-
-    /**
-     * Some Android platform stubs expose `hasShortcutHost()` inconsistently depending on the SDK used by the build,
-     * so resolve it reflectively instead of calling it directly.
-     */
-    private val supportsShortcutHost: Boolean
-        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && runCatching {
-            LauncherApps::class.java.getMethod("hasShortcutHost").invoke(launcherApps) as Boolean
-        }.getOrElse { false }
 
     /** Loads every app in parallel (label + icon work is CPU-bound and was running one app at a time). */
     suspend fun load(): List<AppEntry> = coroutineScope {
         val pm = app.packageManager
         val metrics = app.resources.displayMetrics
         val px = (LARGEST_ICON_DP * metrics.density).roundToInt().coerceIn(96, 256)
-        // a Collator sorts by the user's language rules (accents interleave with their base letter, case is ignored)
         val collator = Collator.getInstance().apply { strength = Collator.PRIMARY }
         launcherApps.getActivityList(null, me)
             .filter { it.componentName.packageName != app.packageName }
@@ -59,13 +47,13 @@ class AppRepository(private val app: Application) {
             .sortedWith(Comparator<AppEntry> { a, b -> collator.compare(a.label, b.label) })
     }
 
-    /**
-     * The app's own quick actions ("new chat", "selfie"...), as shown by the long-press menu. The system only
-     * hands these to the default home app; for anyone else the call is refused and this returns an empty list.
-     */
+    /** The app's own quick actions, as shown by the long-press menu. */
     suspend fun shortcuts(app: AppEntry): List<AppShortcut> = withContext(Dispatchers.Default) {
         try {
-            if (!supportsShortcutHost) return@withContext emptyList()
+            // hasShortcutHostPermission() is part of the platform API, but direct references may be absent from
+            // some compile SDK stubs. Reflectively check it; if unavailable, shortcut querying below still safely
+            // returns an empty list for callers without host permission.
+            if (!hasShortcutHostPermission()) return@withContext emptyList()
             val query = LauncherApps.ShortcutQuery()
                 .setPackage(app.pkg)
                 .setActivity(app.component)
@@ -81,6 +69,11 @@ class AppRepository(private val app: Application) {
         }
     }
 
+    private fun hasShortcutHostPermission(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && runCatching {
+            LauncherApps::class.java.getMethod("hasShortcutHostPermission").invoke(launcherApps) as Boolean
+        }.getOrElse { false }
+
     fun startShortcut(s: AppShortcut): Boolean =
         try {
             launcherApps.startShortcut(s.pkg, s.id, null, null, me)
@@ -90,11 +83,7 @@ class AppRepository(private val app: Application) {
             false
         }
 
-    /**
-     * Emits whenever an app was installed, removed, updated, enabled/disabled or (un)suspended.
-     * Collectors should debounce: events come in bursts. During an update the system reports "changed",
-     * not "removed" + "added", so an updating app never briefly disappears.
-     */
+    /** Emits whenever installed launcher apps change. */
     fun changes(): Flow<Unit> = callbackFlow<Unit> {
         val callback = object : LauncherApps.Callback() {
             override fun onPackageRemoved(packageName: String?, user: UserHandle?) { trySend(Unit) }
@@ -115,7 +104,6 @@ class AppRepository(private val app: Application) {
 }
 
 private fun toEntry(info: LauncherActivityInfo, pm: PackageManager, px: Int, densityDpi: Int): AppEntry? =
-    // one misbehaving app (bad label/icon resource) must not take the whole launcher down
     runCatching {
         val cn = info.componentName
         AppEntry(
@@ -128,9 +116,6 @@ private fun toEntry(info: LauncherActivityInfo, pm: PackageManager, px: Int, den
     }.onFailure { Log.w("Shell", "skipping ${info.componentName}", it) }.getOrNull()
 
 private const val MAX_SHORTCUTS = 4
-
-/** The biggest an icon is ever drawn (the frequent-apps row), so bitmaps are rendered once at that size. */
 private const val LARGEST_ICON_DP = 48
 
-/** One quick action of an app, e.g. "New message". Only the text is shown, in keeping with the rest of the UI. */
 data class AppShortcut(val id: String, val pkg: String, val label: String)
