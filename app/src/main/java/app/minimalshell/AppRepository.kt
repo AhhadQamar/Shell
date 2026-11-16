@@ -5,6 +5,7 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherActivityInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
@@ -34,6 +35,15 @@ class AppRepository(private val app: Application) {
     private val launcherApps: LauncherApps = app.getSystemService(LauncherApps::class.java)
     private val me: UserHandle = Process.myUserHandle() // main profile only, for now
 
+    /**
+     * Some Android platform stubs expose `hasShortcutHost()` inconsistently depending on the SDK used by the build,
+     * so resolve it reflectively instead of calling it directly.
+     */
+    private val supportsShortcutHost: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && runCatching {
+            LauncherApps::class.java.getMethod("hasShortcutHost").invoke(launcherApps) as Boolean
+        }.getOrElse { false }
+
     /** Loads every app in parallel (label + icon work is CPU-bound and was running one app at a time). */
     suspend fun load(): List<AppEntry> = coroutineScope {
         val pm = app.packageManager
@@ -55,7 +65,7 @@ class AppRepository(private val app: Application) {
      */
     suspend fun shortcuts(app: AppEntry): List<AppShortcut> = withContext(Dispatchers.Default) {
         try {
-            if (!launcherApps.hasShortcutHost()) return@withContext emptyList()
+            if (!supportsShortcutHost) return@withContext emptyList()
             val query = LauncherApps.ShortcutQuery()
                 .setPackage(app.pkg)
                 .setActivity(app.component)
