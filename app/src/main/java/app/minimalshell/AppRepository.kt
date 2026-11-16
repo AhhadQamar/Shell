@@ -38,7 +38,7 @@ class AppRepository(private val app: Application) {
     suspend fun load(): List<AppEntry> = coroutineScope {
         val pm = app.packageManager
         val metrics = app.resources.displayMetrics
-        val px = (52 * metrics.density).roundToInt().coerceIn(96, 256)
+        val px = (LARGEST_ICON_DP * metrics.density).roundToInt().coerceIn(96, 256)
         // a Collator sorts by the user's language rules (accents interleave with their base letter, case is ignored)
         val collator = Collator.getInstance().apply { strength = Collator.PRIMARY }
         launcherApps.getActivityList(null, me)
@@ -118,6 +118,9 @@ private fun toEntry(info: LauncherActivityInfo, pm: PackageManager, px: Int, den
     }.onFailure { Log.w("Shell", "skipping ${info.componentName}", it) }.getOrNull()
 
 private const val MAX_SHORTCUTS = 4
+
+/** The biggest an icon is ever drawn (the frequent-apps row), so bitmaps are rendered once at that size. */
+private const val LARGEST_ICON_DP = 48
 
 /** One quick action of an app, e.g. "New message". Only the text is shown, in keeping with the rest of the UI. */
 data class AppShortcut(val id: String, val pkg: String, val label: String)
