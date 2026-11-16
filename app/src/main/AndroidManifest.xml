@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
+    <!-- Without this, Android 9+ silently refuses the uninstall dialog, so the "uninstall" menu item does nothing. -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
 
     <queries>
         <intent>
