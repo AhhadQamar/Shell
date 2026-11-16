@@ -267,7 +267,6 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                 .graphicsLayer { translationY = (1f - drawer.progress) * size.height }
                 .onSizeChanged { drawer.travelPx = it.height.toFloat() }
                 .fillMaxWidth()
-                .heightIn(max = panelMax)
                 .background(
                     Brush.verticalGradient(
                         0f to Color.Transparent,
@@ -277,6 +276,9 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                 )
                 .pointerInput(Unit) { detectTapGestures { } } // taps on the panel itself don't close it
                 .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.ime))
+                // the height cap sits inside the insets padding, so a visible keyboard pushes the panel up
+                // instead of eating into the room the list has
+                .heightIn(max = panelMax)
                 .padding(start = 24.dp, end = 10.dp)
         ) {
             Box(Modifier.weight(1f, fill = false)) {
