@@ -80,11 +80,12 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.Canvas
 
 private sealed interface Item {
     data class Calc(val result: String) : Item
     data class Frequent(val apps: List<AppEntry>) : Item
-    data class Header(val letter: Char) : Item
+    data class Header(val letter: Char, val count: Int) : Item
     data class App(val app: AppEntry) : Item
     data class Web(val query: String) : Item
 }
@@ -125,7 +126,7 @@ private fun buildModel(apps: List<AppEntry>, q: String, s: ShellViewModel): Mode
             .forEach { (letter, list) ->
                 index[letter] = items.size // scrolling here puts the group's bottom edge at the bottom of the view
                 list.asReversed().forEach { items += Item.App(it) }
-                items += Item.Header(letter)
+                items += Item.Header(letter, list.size)
             }
         first = visible.firstOrNull()
     } else {
@@ -305,7 +306,7 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                             when (val item = model.items[i]) {
                                 is Item.Calc -> CalcRow(item.result, accent) { copy(item.result) }
                                 is Item.Frequent -> FrequentRow(item.apps, state) { open(it) }
-                                is Item.Header -> SectionHeader(item.letter, accent)
+                                is Item.Header -> SectionHeader(item.letter, item.count, accent)
                                 is Item.App -> AppRow(
                                     item.app, state, accent,
                                     highlight = !browsing && item.app == model.first,
@@ -326,11 +327,8 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                 }
             }
 
-            // the "horizon" of the drawer: a small shell resting on a hairline, with the query below it
-            Row(Modifier.fillMaxWidth().padding(end = 14.dp), verticalAlignment = Alignment.Bottom) {
-                ShellFan(today = 3, accent = accent, modifier = Modifier.size(30.dp, 16.dp), showPast = false, ridgeWidth = 2.dp)
-                Hairline(Modifier.weight(1f))
-            }
+            // the "horizon" of the drawer: a gently rippling line, with the query below it
+            TideLine(accent, Modifier.padding(end = 14.dp))
             Row(
                 Modifier.fillMaxWidth().padding(end = 14.dp, top = 12.dp, bottom = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -374,11 +372,13 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
 }
 
 @Composable
-private fun SectionHeader(letter: Char, accent: Color) {
-    Row(Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(letter.toString(), style = ink(22.sp, accent, serif = true))
+private fun SectionHeader(letter: Char, count: Int, accent: Color) {
+    Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(letter.toString(), style = ink(32.sp, accent, serif = true, italic = true))
         Spacer(Modifier.width(12.dp))
         Hairline(Modifier.weight(1f))
+        Spacer(Modifier.width(10.dp))
+        Text(count.toString(), style = ink(11.sp, Dim, mono = true)) // how many apps are in this section
     }
 }
 
@@ -422,23 +422,30 @@ private fun AppRow(app: AppEntry, state: ShellViewModel, accent: Color, highligh
 
 @Composable
 private fun FrequentRow(apps: List<AppEntry>, state: ShellViewModel, onOpen: (AppEntry) -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp)) {
-        apps.forEach { app ->
-            key(app.key) {
-                var menu by remember { mutableStateOf(false) }
-                Box {
-                    Column(
-                        Modifier.width(76.dp).pressable(onClick = { onOpen(app) }, onLongClick = { menu = true }),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        AppIcon(app, 48.dp, label = null)
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            app.label, style = ink(11.sp, Sand.copy(0.85f)),
-                            maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-                        )
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp)) {
+        Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("often", style = ink(15.sp, Dim, serif = true, italic = true))
+            Spacer(Modifier.width(10.dp))
+            Hairline(Modifier.weight(1f))
+        }
+        Row(Modifier.fillMaxWidth()) {
+            apps.forEach { app ->
+                key(app.key) {
+                    var menu by remember { mutableStateOf(false) }
+                    Box {
+                        Column(
+                            Modifier.width(76.dp).pressable(onClick = { onOpen(app) }, onLongClick = { menu = true }),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Porthole(app, 56.dp, label = null)
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                app.label, style = ink(11.sp, Sand.copy(0.85f)),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                            )
+                        }
+                        AppMenu(app, state, menu) { menu = false }
                     }
-                    AppMenu(app, state, menu) { menu = false }
                 }
             }
         }
@@ -521,20 +528,36 @@ private fun SpineRail(letters: List<Char>, accent: Color, onJump: (Char) -> Unit
             },
         contentAlignment = Alignment.CenterEnd,
     ) {
-        Box(Modifier.fillMaxHeight().width(2.dp).background(Hair))
+        // a ruler: a tick every 8dp, longer every fourth
+        Canvas(Modifier.fillMaxHeight().width(8.dp)) {
+            val step = 8.dp.toPx()
+            var y = 0f
+            var i = 0
+            while (y <= size.height) {
+                val long = i % 4 == 0
+                drawLine(
+                    Sand.copy(alpha = if (long) 0.35f else 0.2f),
+                    Offset(size.width - (if (long) 6.dp else 3.dp).toPx(), y),
+                    Offset(size.width, y),
+                    strokeWidth = 1.dp.toPx(),
+                )
+                y += step
+                i++
+            }
+        }
         Column(
-            Modifier.fillMaxHeight().padding(end = 8.dp),
+            Modifier.fillMaxHeight().padding(end = 12.dp),
             verticalArrangement = Arrangement.SpaceEvenly,
             horizontalAlignment = Alignment.End,
         ) {
             for (i in letters.indices.reversed()) {
-                Text(letters[i].toString(), style = ink(11.sp, if (i == active) accent else Dim, serif = true))
+                Text(letters[i].toString(), style = ink(12.sp, if (i == active) accent else Dim, serif = true, italic = true))
             }
         }
         if (active >= 0) {
             Text(
                 letters[active].toString(),
-                style = ink(56.sp, accent, FontWeight.Light, serif = true),
+                style = ink(64.sp, accent, FontWeight.Light, serif = true, italic = true),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset {

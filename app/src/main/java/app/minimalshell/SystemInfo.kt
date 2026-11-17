@@ -28,7 +28,6 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.time.temporal.IsoFields
-import java.time.temporal.WeekFields
 
 // ---------- wallpaper accent ----------
 
@@ -71,7 +70,10 @@ data class Tick(
     val battery: Int,
     val charging: Boolean,
     val alarm: String?,
-    val weekDay: Int, // 0..6, which day of the week it is, counting from the locale's first day (lights a ridge of the fan)
+    val dayName: String, // "Monday"
+    val longDate: String, // "16 november"
+    val dayFraction: Float, // 0..1, how far through today we are (drives the wave)
+    val timeLeft: String, // "14h 19m", until midnight
     val weekNumber: Int, // ISO week of the year
 )
 
@@ -102,7 +104,10 @@ fun readTick(ctx: Context): Tick {
         charging = status == BatteryManager.BATTERY_STATUS_CHARGING ||
             status == BatteryManager.BATTERY_STATUS_FULL,
         alarm = alarm,
-        weekDay = now.toLocalDate().get(WeekFields.of(Locale.getDefault()).dayOfWeek()) - 1,
+        dayName = now.dayOfWeek.getDisplayName(java.time.format.TextStyle.FULL, Locale.getDefault()),
+        longDate = now.format(DateTimeFormatter.ofPattern("d MMMM", Locale.getDefault())).lowercase(),
+        dayFraction = (now.hour * 60 + now.minute) / 1440f,
+        timeLeft = (1440 - (now.hour * 60 + now.minute)).let { "${it / 60}h ${it % 60}m" },
         weekNumber = now.toLocalDate().get(IsoFields.WEEK_OF_WEEK_BASED_YEAR),
     )
 }

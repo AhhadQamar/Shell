@@ -77,9 +77,9 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 20.dp)
         ) {
-            Text("shell / settings", style = ink(12.sp, accent, mono = true, tracking = 1.sp))
-            Spacer(Modifier.height(10.dp))
-            Hairline(Modifier.fillMaxWidth())
+            Text("Settings", style = ink(34.sp, accent, serif = true, italic = true))
+            Spacer(Modifier.height(6.dp))
+            TideLine(accent)
 
             if (!isDefault) {
                 Row(
@@ -87,7 +87,7 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("make shell your home", style = ink(16.sp))
+                        Text("make shell your home", style = ink(19.sp, serif = true))
                         Text("the home button and app shortcuts need it", style = ink(11.sp, Dim, mono = true))
                     }
                     Text("set ›", style = ink(13.sp, accent, mono = true))
@@ -97,7 +97,7 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
 
             // accent
             Spacer(Modifier.height(18.dp))
-            Text("accent", style = ink(16.sp))
+            Text("accent", style = ink(19.sp, serif = true))
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 val auto = state.accentOverride == 0
@@ -138,7 +138,7 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("double-tap to lock", style = ink(16.sp))
+                        Text("double-tap to lock", style = ink(19.sp, serif = true))
                         Text(
                             if (lockOn) "double-tap the home screen to lock; also opens the shade reliably"
                             else "needs shell's lock service, switched on in accessibility settings",
@@ -183,7 +183,7 @@ private fun SettingToggle(title: String, subtitle: String, checked: Boolean, acc
     Spacer(Modifier.height(22.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = ink(16.sp))
+            Text(title, style = ink(19.sp, serif = true))
             Text(subtitle, style = ink(12.sp, Dim))
         }
         Switch(

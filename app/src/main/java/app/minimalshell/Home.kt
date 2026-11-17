@@ -49,11 +49,11 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.ui.platform.LocalDensity
 
-/** Size of the pinned icons on the dock. Change this one number to resize them. */
-private val DOCK_ICON = 40.dp
+/** Outer size of a pinned app's ring on the dock (the icon inside is 14dp smaller). Change this one number to resize. */
+private val DOCK_RING = 48.dp
 
 /** Space the long-press menu leaves for the dock so the two never overlap. */
-private val DOCK_CLEARANCE = 150.dp
+private val DOCK_CLEARANCE = 112.dp
 
 /**
  * Home is built from two axes that meet in an L-shaped corner above the dock:
@@ -131,44 +131,56 @@ fun Home(
 
             Spacer(Modifier.weight(1f))
 
-            // the clock, with the shell's seven ridges beneath it standing for the days of the week
-            Text(tick.time, style = ink(72.sp, weight = FontWeight.Light, serif = true))
+            // an editorial stack, left-aligned: the day in italic serif, a big serif clock, then the day as a tide
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(tick.dayName, style = ink(24.sp, accent, serif = true, italic = true))
+                Spacer(Modifier.width(12.dp))
+                Text(tick.longDate, style = ink(12.sp, Dim, mono = true), modifier = Modifier.padding(bottom = 4.dp))
+            }
+            Text(
+                tick.time,
+                style = ink(96.sp, weight = FontWeight.Light, serif = true, tracking = (-3).sp),
+                maxLines = 1,
+                softWrap = false,
+            )
             tick.alarm?.let {
-                Text(it, style = ink(12.sp, Dim, mono = true), modifier = Modifier.padding(top = 2.dp))
+                Text(it, style = ink(12.sp, accent, mono = true), modifier = Modifier.padding(top = 2.dp))
             }
-            Row(Modifier.padding(top = 12.dp, bottom = 20.dp), verticalAlignment = Alignment.Bottom) {
-                ShellFan(today = tick.weekDay, accent = accent, modifier = Modifier.size(58.dp, 30.dp))
-                Spacer(Modifier.width(14.dp))
-                Text("week ${tick.weekNumber}", style = ink(12.sp, Dim, mono = true))
+            Spacer(Modifier.height(18.dp))
+            TideWave(tick.dayFraction, accent, Modifier.fillMaxWidth().height(84.dp))
+            TideNumerals(Modifier.padding(top = 2.dp))
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("${tick.timeLeft} left today", style = ink(11.sp, Dim, mono = true))
+                Text("week ${tick.weekNumber}", style = ink(11.sp, Dim, mono = true))
             }
+            Spacer(Modifier.height(22.dp))
 
-            // dock: icons rest on an arc, the way the shell's ridges fan out
-            Box(
-                // reserve the arc's height up front, so nothing jumps when icons appear after the first load
-                Modifier.fillMaxWidth().heightIn(min = DOCK_ICON + 50.dp),
-                contentAlignment = Alignment.TopCenter,
+            // dock: pinned apps in thin rings
+            Row(
+                // min height = ring size, so the row doesn't jump when icons appear after the first load
+                Modifier.fillMaxWidth().heightIn(min = DOCK_RING),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
+                // only suggest pinning once we know there really are no pins, not while apps are still loading
                 if (appsLoaded && state.pinned.isEmpty()) {
                     Text("long-press an app in the drawer to pin it", style = ink(12.sp, Dim, mono = true))
-                } else {
-                    ArcDock(Modifier.fillMaxWidth()) {
-                        dock.forEach { app ->
-                            key(app.key) { // keeps each icon's menu state with its own app when the dock changes
-                                var menu by remember { mutableStateOf(false) }
-                                Box {
-                                    AppIcon(
-                                        app, DOCK_ICON,
-                                        Modifier.pressable(onClick = { state.launch(app) }, onLongClick = { menu = true }),
-                                    )
-                                    AppMenu(app, state, menu) { menu = false }
-                                }
-                            }
+                }
+                dock.forEach { app ->
+                    key(app.key) { // keeps each icon's menu state with its own app when the dock changes
+                        var menu by remember { mutableStateOf(false) }
+                        Box {
+                            Porthole(
+                                app, DOCK_RING,
+                                Modifier.pressable(onClick = { state.launch(app) }, onLongClick = { menu = true }),
+                            )
+                            AppMenu(app, state, menu) { menu = false }
                         }
                     }
                 }
             }
 
-            // handle: a small fan of its own; tap it (or swipe up) to open the drawer
+            // handle: two small swells; tap it (or swipe up) to open the drawer
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -181,7 +193,7 @@ fun Home(
                     ) { drawer.open() },
                 contentAlignment = Alignment.Center,
             ) {
-                ShellFan(today = 3, accent = accent, modifier = Modifier.size(34.dp, 18.dp), showPast = false, ridgeWidth = 2.dp)
+                SwellHandle(accent, Modifier.size(34.dp, 10.dp))
             }
         }
     }
@@ -216,6 +228,6 @@ private fun MenuRow(label: String, accent: Color, onClick: () -> Unit) {
     ) {
         Text("›", style = ink(18.sp, accent, mono = true))
         Spacer(Modifier.width(12.dp))
-        Text(label, style = ink(17.sp, mono = true))
+        Text(label, style = ink(24.sp, serif = true, italic = true))
     }
 }

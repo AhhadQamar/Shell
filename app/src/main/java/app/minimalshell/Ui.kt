@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.produceState
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.text.font.FontStyle
 
 // ---------------------------------------------------------------------------
 // Design tokens. See DESIGN.md: the wallpaper is never dimmed globally, so
@@ -72,6 +73,7 @@ fun ink(
     mono: Boolean = false,
     tracking: TextUnit = TextUnit.Unspecified,
     serif: Boolean = false,
+    italic: Boolean = false,
 ) = TextStyle(
     color = color,
     fontSize = size,
@@ -81,6 +83,7 @@ fun ink(
         serif -> Serif
         else -> FontFamily.Default
     },
+    fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
     letterSpacing = tracking,
     shadow = Lift,
 )
@@ -202,7 +205,7 @@ fun AppMenu(app: AppEntry, state: ShellViewModel, expanded: Boolean, onDismiss: 
 @Composable
 private fun MenuItem(label: String, onClick: () -> Unit) {
     DropdownMenuItem(
-        text = { Text(label, style = TextStyle(color = Sand, fontSize = 14.sp, fontFamily = Mono)) },
+        text = { Text(label, style = TextStyle(color = Sand, fontSize = 17.sp, fontFamily = Serif)) },
         onClick = onClick,
     )
 }
