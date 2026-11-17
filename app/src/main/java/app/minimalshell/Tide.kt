@@ -2,157 +2,259 @@ package app.minimalshell
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
 import kotlin.math.PI
-import kotlin.math.cos
 import kotlin.math.sin
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-// "Tide": the day drawn as a tide. The water fills up as the day goes by, a marker rides the wave at the current
-// time, and a scale of hour ticks runs underneath, like a tide table. Everything here is drawn once and then sits
-// still; the only motion is a single rise when Home comes back on screen, so it costs no battery while you look.
+// "Pearls": the clock is the hero on the left; pinned apps are strung like pearls on a wavy thread down the right
+// edge, where the thumb rests. The thread is also the day: it fills with colour from the top (midnight) down to
+// the current time, with a small bead where you are. Everything is drawn once and then sits still. The only motion
+// is a short entrance each time Home comes back on screen, so it costs no battery while you look at it.
+
+// ---------- entrance ----------
+
+private const val ENTRANCE_MS = 1000
 
 /**
- * The day as a wave. [fraction] (0..1) is how far through today we are: the water is filled up to that point and
- * the marker sits on the curve there. The wave rises into place each time Home appears.
+ * One short staggered entrance for the whole Home screen. A single animation drives every element; each element
+ * picks its own slice of it with [phase], so adding an element costs nothing extra.
+ */
+@Stable
+class Entrance(private val scope: CoroutineScope) {
+    private val progress = Animatable(0f)
+    private var job: Job? = null
+
+    /** Plays the entrance from the start. Call it whenever Home becomes visible. */
+    fun play() {
+        job?.cancel()
+        job = scope.launch {
+            progress.snapTo(0f)
+            progress.animateTo(1f, tween(ENTRANCE_MS, easing = LinearEasing))
+        }
+    }
+
+    fun cancel() {
+        job?.cancel()
+    }
+
+    /** Safety net: if [play] never ran, show everything instead of leaving the screen blank. */
+    fun showNow() {
+        if (job == null) scope.launch { progress.snapTo(1f) }
+    }
+
+    /** 0..1 for an element that starts [delayMs] into the entrance and takes [durationMs] to arrive. */
+    fun phase(delayMs: Int, durationMs: Int = 380): Float =
+        FastOutSlowInEasing.transform(((progress.value * ENTRANCE_MS - delayMs) / durationMs).coerceIn(0f, 1f))
+}
+
+/** Fades the element in while it rises a few dp into place. The animation is read while drawing, so nothing recomposes. */
+fun Modifier.entrance(entrance: Entrance, delayMs: Int, rise: Dp = 14.dp): Modifier =
+    graphicsLayer {
+        val p = entrance.phase(delayMs)
+        alpha = p
+        translationY = (1f - p) * rise.toPx()
+    }
+
+// ---------- the clock ----------
+
+/**
+ * The time as a pair of huge serif numbers: the hour in sand on top, the minutes below in the accent colour, in italic.
+ * The hour is always two digits ("09") so the pair keeps the same shape all day.
  */
 @Composable
-fun TideWave(fraction: Float, accent: Color, modifier: Modifier = Modifier) {
-    val scope = rememberCoroutineScope()
-    val settle = remember { Animatable(0f) }
-    LifecycleResumeEffect(Unit) {
-        val job = scope.launch {
-            settle.snapTo(0f)
-            settle.animateTo(1f, tween(1300, easing = FastOutSlowInEasing))
-        }
-        onPauseOrDispose { job.cancel() }
+fun StackedClock(time: String, accent: Color, modifier: Modifier = Modifier) {
+    val hours = time.substringBefore(':').padStart(2, '0')
+    val minutes = time.substringAfter(':')
+    val style = ink(120.sp, weight = FontWeight.Light, serif = true, tracking = (-4).sp).copy(
+        lineHeight = 100.sp,
+        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
+    )
+    Column(modifier) {
+        Text(hours, style = style, maxLines = 1, softWrap = false)
+        Text(minutes, style = style.copy(color = accent, fontStyle = FontStyle.Italic), maxLines = 1, softWrap = false)
     }
+}
 
-    Canvas(modifier) {
-        val w = size.width
-        val h = size.height
-        val rise = settle.value // read here, in the draw phase, so the animation only redraws
-        val base = h * 0.40f
-        val amp = h * 0.24f * rise
-        val waterBottom = h * 0.72f
-        // two tides a day, with a faint ripple on top so it doesn't look like a perfect sine
-        fun y(x: Float): Float {
-            val t = x / w
-            val swell = cos(2.0 * PI * 2.0 * t - 0.6) + 0.25 * sin(2.0 * PI * 3.0 * t + 1.3)
-            return base - amp * swell.toFloat()
-        }
+// ---------- the thread dock ----------
 
-        val xNow = fraction.coerceIn(0f, 1f) * w
-        val step = 3.dp.toPx()
-        fun curve(x0: Float, x1: Float): Path {
-            val p = Path()
-            p.moveTo(x0, y(x0))
-            var x = x0 + step
-            while (x < x1) {
-                p.lineTo(x, y(x))
-                x += step
+/** Outer size of a pinned app's pearl (the icon inside is 14dp smaller). Change this one number to resize. */
+val PEARL = 48.dp
+
+private val PEARL_PITCH = 96.dp // distance between pearls; shrinks on short screens so they always fit
+private val THREAD_AMP = 9.dp // how far the thread swings left and right
+private val THREAD_WAVELENGTH = 114.dp
+
+private fun threadX(cx: Float, amp: Float, wavelength: Float, y: Float): Float =
+    cx + amp * sin(2.0 * PI * y / wavelength).toFloat()
+
+/**
+ * A wavy vertical thread that doubles as the day, with the pinned apps strung on it like pearls.
+ *
+ * Top of the thread = midnight, bottom = the next midnight. The part of the thread that has "passed" is drawn in the
+ * accent colour and a bead marks now. [slots] pearls always fit; slots without an app are drawn as faint dashed
+ * rings, which shows that more can be pinned. [keys] identifies the pinned apps (one per filled slot) and [pearl]
+ * draws the one at index i.
+ */
+@Composable
+fun ThreadDock(
+    fraction: Float,
+    accent: Color,
+    entrance: Entrance,
+    slots: Int,
+    keys: List<String>,
+    modifier: Modifier = Modifier,
+    pearl: @Composable (Int) -> Unit,
+) {
+    BoxWithConstraints(modifier) {
+        val h = maxHeight
+        val w = maxWidth
+        val pitch = minOf(PEARL_PITCH, (h - PEARL) / (slots - 1))
+        val top = (h - (pitch * (slots - 1) + PEARL)) / 2
+        fun centerY(i: Int): Dp = top + PEARL / 2 + pitch * i
+        fun swing(y: Dp): Dp = THREAD_AMP * sin(2.0 * PI * (y / THREAD_WAVELENGTH)).toFloat()
+
+        // the thread itself, the hour ticks beside it, and the empty slots
+        Canvas(Modifier.matchParentSize()) {
+            val cx = size.width / 2f
+            val amp = THREAD_AMP.toPx()
+            val wl = THREAD_WAVELENGTH.toPx()
+            val step = 4.dp.toPx()
+            fun thread(y0: Float, y1: Float): Path {
+                val p = Path()
+                p.moveTo(threadX(cx, amp, wl, y0), y0)
+                var y = y0 + step
+                while (y < y1) {
+                    p.lineTo(threadX(cx, amp, wl, y), y)
+                    y += step
+                }
+                p.lineTo(threadX(cx, amp, wl, y1), y1)
+                return p
             }
-            p.lineTo(x1, y(x1))
-            return p
-        }
 
-        // the water that has "come in" so far today
-        val water = Path()
-        water.moveTo(0f, waterBottom)
-        water.lineTo(0f, y(0f))
-        var wx = step
-        while (wx < xNow) {
-            water.lineTo(wx, y(wx))
-            wx += step
-        }
-        water.lineTo(xNow, y(xNow))
-        water.lineTo(xNow, waterBottom)
-        water.close()
-        drawPath(water, accent.copy(alpha = 0.18f))
-
-        drawPath(curve(xNow, w), Sand.copy(alpha = 0.4f), style = Stroke(1.5.dp.toPx(), cap = StrokeCap.Round))
-        drawPath(
-            curve(0f, xNow), accent,
-            style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
-        )
-
-        // now
-        val yNow = y(xNow)
-        drawLine(Sand.copy(alpha = 0.25f), Offset(xNow, yNow), Offset(xNow, waterBottom), strokeWidth = 1.dp.toPx())
-        drawCircle(accent.copy(alpha = 0.28f), radius = 10.dp.toPx(), center = Offset(xNow, yNow))
-        drawCircle(accent, radius = 4.5.dp.toPx(), center = Offset(xNow, yNow))
-
-        // the scale: one tick per hour, longer at 0 / 6 / 12 / 18 / 24, the current hour in the accent colour
-        val hourNow = (fraction * 24f).toInt().coerceIn(0, 23)
-        val tickTop = h * 0.82f
-        for (i in 0..24) {
-            val x = i / 24f * w
-            val long = i % 6 == 0
-            val color = when {
-                i == hourNow -> accent
-                x <= xNow -> Sand.copy(alpha = 0.6f)
-                else -> Sand.copy(alpha = 0.25f)
-            }
-            drawLine(
-                color,
-                Offset(x, tickTop),
-                Offset(x, tickTop + (if (long) 9.dp else 5.dp).toPx()),
-                strokeWidth = (if (long) 1.5f else 1f).dp.toPx(),
+            val yNow = fraction.coerceIn(0f, 1f) * size.height
+            val yFilled = yNow * entrance.phase(120, 620) // the colour runs down the thread as Home appears
+            drawPath(
+                thread(0f, size.height), Sand.copy(alpha = 0.3f),
+                style = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round),
             )
+            drawPath(
+                thread(0f, yFilled), accent,
+                style = Stroke(1.8.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+            )
+
+            // one tick per hour just left of the thread, longer at 0 / 6 / 12 / 18 / 24
+            for (i in 0..24) {
+                val y = i / 24f * size.height
+                val long = i % 6 == 0
+                val len = (if (long) 8.dp else 4.dp).toPx()
+                val x1 = threadX(cx, amp, wl, y) - 6.dp.toPx()
+                drawLine(
+                    Sand.copy(alpha = if (y <= yNow) 0.5f else 0.22f),
+                    Offset(x1 - len, y), Offset(x1, y),
+                    strokeWidth = (if (long) 1.4f else 1f).dp.toPx(),
+                )
+            }
+
+            // slots that nothing is pinned to yet
+            for (i in keys.size until slots) {
+                val y = centerY(i).toPx()
+                drawCircle(
+                    Sand.copy(alpha = 0.16f),
+                    radius = (PEARL / 2).toPx(),
+                    center = Offset(threadX(cx, amp, wl, y), y),
+                    style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 6.dp.toPx()))),
+                )
+            }
+        }
+
+        // the pearls
+        keys.forEachIndexed { i, k ->
+            key(k) {
+                val cy = centerY(i)
+                val cx = w / 2 + swing(cy)
+                Box(
+                    Modifier
+                        .offset(x = cx - PEARL / 2, y = cy - PEARL / 2)
+                        .entrance(entrance, 240 + 70 * i),
+                ) { pearl(i) }
+            }
+        }
+
+        // the bead for "now", drawn last so a pearl can't hide it
+        Canvas(Modifier.matchParentSize()) {
+            val cx = size.width / 2f
+            val amp = THREAD_AMP.toPx()
+            val wl = THREAD_WAVELENGTH.toPx()
+            val p = entrance.phase(120, 620)
+            val y = fraction.coerceIn(0f, 1f) * size.height * p
+            val center = Offset(threadX(cx, amp, wl, y), y)
+            drawCircle(accent.copy(alpha = 0.28f * p), radius = 8.dp.toPx(), center = center)
+            drawCircle(accent.copy(alpha = p), radius = 3.6.dp.toPx(), center = center)
         }
     }
 }
 
-/** The numerals that sit under the wave's tick scale: 00, 06, 12, 18, 24. */
+/**
+ * A pinned app inside a thin ring, like a pearl. With [solid] the ring is filled with the deep-sea colour, so a
+ * thread passing behind it is hidden, as if the pearl were strung on it.
+ */
 @Composable
-fun TideNumerals(modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxWidth()) {
-        listOf(0, 6, 12, 18, 24).forEach { hr ->
-            Text(
-                "%02d".format(hr),
-                style = ink(10.sp, Dim, mono = true),
-                // bias runs -1 (left edge) .. 1 (right edge), so these land under their ticks
-                modifier = Modifier.align(BiasAlignment(hr / 12f - 1f, 0f)),
-            )
-        }
-    }
-}
-
-/** A pinned app inside a thin ring, like a porthole. */
-@Composable
-fun Porthole(app: AppEntry, ring: Dp, modifier: Modifier = Modifier, label: String? = app.label) {
+fun Porthole(
+    app: AppEntry,
+    ring: Dp,
+    modifier: Modifier = Modifier,
+    label: String? = app.label,
+    solid: Boolean = false,
+) {
     Box(
-        modifier.size(ring).border(1.dp, Sand.copy(alpha = 0.4f), CircleShape),
+        modifier
+            .size(ring)
+            .then(if (solid) Modifier.background(Sea, CircleShape) else Modifier)
+            .background(Sand.copy(alpha = 0.06f), CircleShape)
+            .border(1.dp, Sand.copy(alpha = 0.4f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
         AppIcon(app, ring - 14.dp, Modifier.clip(CircleShape), label = label)
     }
 }
+
+// ---------- small marks ----------
 
 /** The "open apps" handle: two small swells. */
 @Composable

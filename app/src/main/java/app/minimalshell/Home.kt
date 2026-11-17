@@ -48,12 +48,13 @@ import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.ui.platform.LocalDensity
-
-/** Outer size of a pinned app's ring on the dock (the icon inside is 14dp smaller). Change this one number to resize. */
-private val DOCK_RING = 48.dp
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import kotlinx.coroutines.delay
 
 /** Space the long-press menu leaves for the dock so the two never overlap. */
-private val DOCK_CLEARANCE = 112.dp
+private val DOCK_CLEARANCE = 80.dp
 
 /**
  * Home is built from two axes that meet in an L-shaped corner above the dock:
@@ -76,6 +77,18 @@ fun Home(
     val shadeThreshold = with(LocalDensity.current) { 80.dp.toPx() }
     val netDrag = remember { FloatArray(1) } // finger travel of the current swipe; positive = down
     val dock = state.pinned.mapNotNull { k -> apps.firstOrNull { it.key == k } }.take(MAX_PINNED)
+
+    // a short staggered entrance every time Home comes back on screen
+    val scope = rememberCoroutineScope()
+    val entrance = remember { Entrance(scope) }
+    LifecycleResumeEffect(Unit) {
+        entrance.play()
+        onPauseOrDispose { entrance.cancel() }
+    }
+    LaunchedEffect(Unit) {
+        delay(2500)
+        entrance.showNow() // only does anything if the entrance somehow never started
+    }
 
     Box(
         Modifier
@@ -115,85 +128,95 @@ fun Home(
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Sea.copy(0.6f))))
         )
 
-        Column(
+        Row(
             Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.systemBars)
-                .padding(horizontal = 24.dp, vertical = 12.dp)
+                .padding(start = 24.dp, top = 12.dp, bottom = 12.dp)
         ) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(tick.date, style = ink(13.sp, Dim, mono = true))
+            // left: the clock is the hero
+            Column(Modifier.weight(1f).fillMaxHeight()) {
                 Text(
                     (if (tick.charging) "+" else "") + "${tick.battery}%",
-                    style = ink(13.sp, accent, mono = true),
+                    style = ink(12.sp, accent, mono = true, tracking = 1.sp),
+                    modifier = Modifier.entrance(entrance, 0),
                 )
-            }
 
-            Spacer(Modifier.weight(1f))
+                Spacer(Modifier.weight(1f))
 
-            // an editorial stack, left-aligned: the day in italic serif, a big serif clock, then the day as a tide
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text(tick.dayName, style = ink(24.sp, accent, serif = true, italic = true))
-                Spacer(Modifier.width(12.dp))
-                Text(tick.longDate, style = ink(12.sp, Dim, mono = true), modifier = Modifier.padding(bottom = 4.dp))
-            }
-            Text(
-                tick.time,
-                style = ink(96.sp, weight = FontWeight.Light, serif = true, tracking = (-3).sp),
-                maxLines = 1,
-                softWrap = false,
-            )
-            tick.alarm?.let {
-                Text(it, style = ink(12.sp, accent, mono = true), modifier = Modifier.padding(top = 2.dp))
-            }
-            Spacer(Modifier.height(18.dp))
-            TideWave(tick.dayFraction, accent, Modifier.fillMaxWidth().height(84.dp))
-            TideNumerals(Modifier.padding(top = 2.dp))
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("${tick.timeLeft} left today", style = ink(11.sp, Dim, mono = true))
-                Text("week ${tick.weekNumber}", style = ink(11.sp, Dim, mono = true))
-            }
-            Spacer(Modifier.height(22.dp))
+                Text(
+                    tick.dayName,
+                    style = ink(26.sp, accent, serif = true, italic = true),
+                    modifier = Modifier.entrance(entrance, 60),
+                )
+                Text(
+                    "${tick.longDate} · wk ${tick.weekNumber}".uppercase(),
+                    style = ink(11.sp, Dim, mono = true, tracking = 1.sp),
+                    modifier = Modifier.padding(top = 2.dp, bottom = 6.dp).entrance(entrance, 90),
+                )
+                StackedClock(tick.time, accent, Modifier.entrance(entrance, 140))
+                tick.alarm?.let {
+                    Text(
+                        it.uppercase(),
+                        style = ink(11.sp, accent, mono = true, tracking = 1.sp),
+                        modifier = Modifier.padding(top = 6.dp).entrance(entrance, 220),
+                    )
+                }
+                Text(
+                    "${tick.timeLeft} left today".uppercase(),
+                    style = ink(11.sp, Dim, mono = true, tracking = 1.sp),
+                    modifier = Modifier.padding(top = 4.dp).entrance(entrance, 260),
+                )
 
-            // dock: pinned apps in thin rings
-            Row(
-                // min height = ring size, so the row doesn't jump when icons appear after the first load
-                Modifier.fillMaxWidth().heightIn(min = DOCK_RING),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+                Spacer(Modifier.height(20.dp))
+
                 // only suggest pinning once we know there really are no pins, not while apps are still loading
                 if (appsLoaded && state.pinned.isEmpty()) {
-                    Text("long-press an app in the drawer to pin it", style = ink(12.sp, Dim, mono = true))
+                    Text(
+                        "long-press an app in the drawer to pin it",
+                        style = ink(11.sp, Dim, mono = true),
+                        modifier = Modifier.padding(end = 12.dp, bottom = 8.dp),
+                    )
                 }
-                dock.forEach { app ->
-                    key(app.key) { // keeps each icon's menu state with its own app when the dock changes
-                        var menu by remember { mutableStateOf(false) }
-                        Box {
-                            Porthole(
-                                app, DOCK_RING,
-                                Modifier.pressable(onClick = { state.launch(app) }, onLongClick = { menu = true }),
-                            )
-                            AppMenu(app, state, menu) { menu = false }
-                        }
-                    }
+
+                // handle: two small swells; tap it (or swipe up anywhere) to open the drawer
+                Row(
+                    Modifier
+                        .height(44.dp)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            role = Role.Button,
+                            onClickLabel = "Open apps",
+                        ) { drawer.open() }
+                        .entrance(entrance, 300),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SwellHandle(accent, Modifier.size(34.dp, 10.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text("ALL APPS", style = ink(11.sp, Dim, mono = true, tracking = 2.sp))
                 }
             }
 
-            // handle: two small swells; tap it (or swipe up) to open the drawer
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .height(40.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        role = Role.Button,
-                        onClickLabel = "Open apps",
-                    ) { drawer.open() },
-                contentAlignment = Alignment.Center,
-            ) {
-                SwellHandle(accent, Modifier.size(34.dp, 10.dp))
+            // right: the day as a thread, with the pinned apps strung on it like pearls
+            ThreadDock(
+                fraction = tick.dayFraction,
+                accent = accent,
+                entrance = entrance,
+                slots = MAX_PINNED,
+                keys = dock.map { it.key },
+                modifier = Modifier.width(88.dp).fillMaxHeight(),
+            ) { i ->
+                val app = dock[i]
+                var menu by remember { mutableStateOf(false) }
+                Box {
+                    Porthole(
+                        app, PEARL,
+                        Modifier.pressable(onClick = { state.launch(app) }, onLongClick = { menu = true }),
+                        solid = true,
+                    )
+                    AppMenu(app, state, menu) { menu = false }
+                }
             }
         }
     }
