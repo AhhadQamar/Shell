@@ -44,12 +44,22 @@ fun uninstallApp(ctx: Context, pkg: String) {
     safeStart(ctx, Intent(Intent.ACTION_DELETE, Uri.fromParts("package", pkg, null)))
 }
 
-fun webSearch(ctx: Context, q: String) {
+fun webSearch(ctx: Context, q: String, engine: SearchEngine = SearchEngines.all.first()) {
+    searchUrl(ctx, engine.url, q)
+}
+
+/** Opens [template] (a URL with %s where the search text goes) in the browser, or in the app that handles it. */
+fun searchUrl(ctx: Context, template: String, query: String) {
     safeStart(
         ctx,
-        Intent(Intent.ACTION_VIEW, Uri.parse("https://duckduckgo.com/?q=" + Uri.encode(q))),
+        Intent(Intent.ACTION_VIEW, Uri.parse(template.replace("%s", Uri.encode(query)))),
         "No browser found",
     )
+}
+
+/** Opens one of the system settings screens by its intent action. */
+fun openSettingsPage(ctx: Context, action: String) {
+    safeStart(ctx, Intent(action), "That settings page isn't available")
 }
 
 fun pickWallpaper(ctx: Context) {

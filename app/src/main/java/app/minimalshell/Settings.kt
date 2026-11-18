@@ -128,6 +128,24 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
             SettingToggle("type to search", "open the keyboard as soon as the drawer opens", state.autoKeyboard, accent) {
                 state.updateAutoKeyboard(it)
             }
+            SettingToggle("instant launch", "open an app by itself once it is the only match", state.instantLaunch, accent) {
+                state.updateInstantLaunch(it)
+            }
+            SettingToggle("keep hidden apps out of search", "otherwise they still show up there", state.hideHiddenInSearch, accent) {
+                state.updateHideHiddenInSearch(it)
+            }
+            // tap to switch to the next engine; it is the one used for the web search at the end of a query
+            Spacer(Modifier.height(22.dp))
+            Row(
+                Modifier.fillMaxWidth().clickable { state.cycleSearchEngine() },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("search engine", style = ink(19.sp, serif = true))
+                    Text("for the web search at the end of the drawer", style = ink(12.sp, Dim))
+                }
+                Text(SearchEngines.byId(state.searchEngine).name + " \u203A", style = ink(13.sp, accent, mono = true))
+            }
 
             // optional accessibility service: double-tap to lock (needs Android 9+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -173,7 +191,10 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
                 }
             }
             Spacer(Modifier.height(4.dp))
-            Text("hidden apps still show up when you search", style = ink(11.sp, Dim, mono = true))
+            Text(
+                if (state.hideHiddenInSearch) "hidden apps never show up in search" else "hidden apps still show up when you search",
+                style = ink(11.sp, Dim, mono = true),
+            )
         }
     }
 }

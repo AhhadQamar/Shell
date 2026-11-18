@@ -55,6 +55,12 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var autoKeyboard by mutableStateOf(false)
         private set
+    var searchEngine by mutableStateOf("duckduckgo")
+        private set
+    var instantLaunch by mutableStateOf(false)
+        private set
+    var hideHiddenInSearch by mutableStateOf(false)
+        private set
 
     /** Keys of the apps installed right now; empty until the first successful load. */
     private var liveKeys: Set<String> = emptySet()
@@ -147,6 +153,23 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
         persist(on) { saveAutoKeyboard(it) }
     }
 
+    /** Switches to the next web search engine in the list (the settings row just cycles through them). */
+    fun cycleSearchEngine() {
+        val next = SearchEngines.next(searchEngine).id
+        searchEngine = next
+        persist(next) { saveSearchEngine(it) }
+    }
+
+    fun updateInstantLaunch(on: Boolean) {
+        instantLaunch = on
+        persist(on) { saveInstantLaunch(it) }
+    }
+
+    fun updateHideHiddenInSearch(on: Boolean) {
+        hideHiddenInSearch = on
+        persist(on) { saveHideHiddenInSearch(it) }
+    }
+
     /** Captures [value] now and saves it in the background. Writes are applied in the order they were made. */
     private fun <T> persist(value: T, action: suspend SettingsStore.(T) -> Unit) {
         viewModelScope.launch { store.action(value) }
@@ -159,6 +182,9 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
         accentOverride = s.accent
         autoKeyboard = s.autoKeyboard
         showFrequent = s.showFrequent
+        searchEngine = s.searchEngine
+        instantLaunch = s.instantLaunch
+        hideHiddenInSearch = s.hideHiddenInSearch
     }
 
     private fun applyApps(list: List<AppEntry>) {

@@ -29,6 +29,9 @@ private val COUNTS = stringPreferencesKey("counts")
 private val ACCENT = intPreferencesKey("accent")
 private val AUTO_KEYBOARD = booleanPreferencesKey("autoKeyboard")
 private val FREQUENT = booleanPreferencesKey("frequent")
+private val SEARCH_ENGINE = stringPreferencesKey("searchEngine")
+private val INSTANT_LAUNCH = booleanPreferencesKey("instantLaunch")
+private val HIDE_HIDDEN_IN_SEARCH = booleanPreferencesKey("hiddenInSearch")
 
 /** Reads and writes the launcher's persisted settings. Both directions run off the main thread. */
 class SettingsStore(context: Context) {
@@ -42,6 +45,9 @@ class SettingsStore(context: Context) {
         val accent: Int = PEACH_ARGB,
         val autoKeyboard: Boolean = false,
         val showFrequent: Boolean = true,
+        val searchEngine: String = "duckduckgo",
+        val instantLaunch: Boolean = false,
+        val hideHiddenInSearch: Boolean = false,
     )
 
     /** Never throws (except cancellation): unreadable storage just means defaults. */
@@ -61,6 +67,9 @@ class SettingsStore(context: Context) {
             accent = p[ACCENT] ?: PEACH_ARGB,
             autoKeyboard = p[AUTO_KEYBOARD] ?: false,
             showFrequent = p[FREQUENT] ?: true,
+            searchEngine = p[SEARCH_ENGINE] ?: "duckduckgo",
+            instantLaunch = p[INSTANT_LAUNCH] ?: false,
+            hideHiddenInSearch = p[HIDE_HIDDEN_IN_SEARCH] ?: false,
         )
     }
 
@@ -71,6 +80,9 @@ class SettingsStore(context: Context) {
     suspend fun saveAccent(v: Int) = write { it[ACCENT] = v }
     suspend fun saveAutoKeyboard(on: Boolean) = write { it[AUTO_KEYBOARD] = on }
     suspend fun saveShowFrequent(on: Boolean) = write { it[FREQUENT] = on }
+    suspend fun saveSearchEngine(id: String) = write { it[SEARCH_ENGINE] = id }
+    suspend fun saveInstantLaunch(on: Boolean) = write { it[INSTANT_LAUNCH] = on }
+    suspend fun saveHideHiddenInSearch(on: Boolean) = write { it[HIDE_HIDDEN_IN_SEARCH] = on }
 
     private suspend fun write(change: (MutablePreferences) -> Unit) {
         try {

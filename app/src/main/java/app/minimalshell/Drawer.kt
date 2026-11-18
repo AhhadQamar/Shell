@@ -86,6 +86,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import kotlin.math.PI
 import kotlin.math.sin
+import kotlinx.coroutines.delay
 
 private sealed interface Item {
     data class Calc(val result: String) : Item
@@ -93,6 +94,8 @@ private sealed interface Item {
     data class Header(val letter: Char, val count: Int) : Item
     data class App(val app: AppEntry) : Item
     data class Web(val query: String) : Item
+    data class Setting(val entry: SettingsEntry) : Item
+    data class BangSearch(val bang: SearchBang, val query: String) : Item
 }
 
 private class Model(val items: List<Item>, val index: Map<Char, Int>, val first: AppEntry?)
@@ -136,8 +139,11 @@ private fun buildModel(apps: List<AppEntry>, q: String, s: ShellViewModel): Mode
         first = visible.firstOrNull()
     } else {
         Calc.eval(q)?.let { items += Item.Calc(it) }
+        SearchBangs.parse(q)?.let { (bang, rest) -> items += Item.BangSearch(bang, rest) }
         val folded = q.fold() // once per keystroke, not once per app
-        val matches = apps
+        // hidden apps still show up in search, unless the user asked for them not to
+        val pool = if (s.hideHiddenInSearch) apps.filter { it.key !in s.hidden } else apps
+        val matches = pool
             .mapNotNull { a -> matchRank(a, folded).takeIf { it >= 0 }?.let { a to it } }
             .sortedWith(
                 compareBy<Pair<AppEntry, Int>>(
@@ -148,6 +154,7 @@ private fun buildModel(apps: List<AppEntry>, q: String, s: ShellViewModel): Mode
             )
             .map { it.first }
         matches.forEach { items += Item.App(it) }
+        SystemSettings.match(folded).forEach { items += Item.Setting(it) }
         items += Item.Web(q)
         first = matches.firstOrNull()
     }
@@ -193,10 +200,13 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
 
     var query by remember { mutableStateOf("") }
     val q = query.trim()
-    val model = remember(apps, q, state.hidden, state.counts, state.showFrequent) {
+    val model = remember(apps, q, state.hidden, state.counts, state.showFrequent, state.hideHiddenInSearch) {
         buildModel(apps, q, state)
     }
     val calcResult = (model.items.firstOrNull() as? Item.Calc)?.result
+    val bangItem = model.items.firstOrNull { it is Item.BangSearch } as? Item.BangSearch
+    val firstSetting = model.items.firstOrNull { it is Item.Setting } as? Item.Setting
+    val engine = SearchEngines.byId(state.searchEngine)
     val browsing = q.isEmpty()
     val appCount = model.items.count { it is Item.App }
     val countLabel = when {
@@ -209,6 +219,30 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
     fun open(app: AppEntry) {
         state.launch(app)
         drawer.snapClosed() // no closing animation underneath the app's own launch animation
+    }
+
+    fun openSetting(entry: SettingsEntry) {
+        openSettingsPage(ctx, entry.action)
+        drawer.snapClosed()
+    }
+
+    fun runBang(item: Item.BangSearch) {
+        searchUrl(ctx, item.bang.url, item.query)
+        drawer.snapClosed()
+    }
+
+    fun searchWeb(text: String) {
+        webSearch(ctx, text, engine)
+        drawer.snapClosed()
+    }
+
+    // optional "instant launch": when exactly one app matches and nothing else does, open it after a short pause
+    val soleApp = if (!browsing && calcResult == null && bangItem == null && firstSetting == null && appCount == 1) model.first else null
+    LaunchedEffect(soleApp?.key, q) {
+        if (state.instantLaunch && soleApp != null && q.trim().length >= 2) {
+            delay(600) // typing on cancels this, so a longer name can still be finished
+            open(soleApp)
+        }
     }
 
     fun copy(text: String) {
@@ -312,6 +346,8 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                                     is Item.Header -> "h${it.letter}"
                                     is Item.App -> it.app.component.flattenToString()
                                     is Item.Web -> "web"
+                                    is Item.Setting -> "set:${it.entry.action}"
+                                    is Item.BangSearch -> "bang"
                                 }
                             },
                         ) { i ->
@@ -323,10 +359,9 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                                     item.app, state, accent,
                                     highlight = !browsing && item.app == model.first,
                                 ) { open(item.app) }
-                                is Item.Web -> WebRow(item.query, accent) {
-                                    webSearch(ctx, item.query)
-                                    drawer.snapClosed()
-                                }
+                                is Item.Web -> WebRow(item.query, engine.name, accent) { searchWeb(item.query) }
+                                is Item.Setting -> SettingRow(item.entry, accent) { openSetting(item.entry) }
+                                is Item.BangSearch -> BangRow(item.bang, item.query, accent) { runBang(item) }
                             }
                         }
                     }
@@ -360,8 +395,10 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                     keyboardActions = KeyboardActions(onGo = {
                         when {
                             calcResult != null -> copy(calcResult)
+                            bangItem != null -> runBang(bangItem)
                             model.first != null -> open(model.first)
-                            q.isNotEmpty() -> { webSearch(ctx, q); drawer.snapClosed() }
+                            firstSetting != null -> openSetting(firstSetting.entry)
+                            q.isNotEmpty() -> searchWeb(q)
                         }
                     }),
                     modifier = Modifier.weight(1f).focusRequester(focusRequester),
@@ -369,7 +406,7 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                         Box {
                             if (query.isEmpty()) {
                                 Text(
-                                    "search apps, or type a sum", style = ink(15.sp, Dim, mono = true),
+                                    "apps, settings, sums, \u201Cy cats\u201D", style = ink(15.sp, Dim, mono = true),
                                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
                             }
@@ -510,18 +547,55 @@ private fun CalcRow(result: String, accent: Color, onCopy: () -> Unit) {
 }
 
 @Composable
-private fun WebRow(query: String, accent: Color, onOpen: () -> Unit) {
+private fun WebRow(query: String, engineName: String, accent: Color, onOpen: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().pressableRow(onClick = onOpen).padding(vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(49.dp), contentAlignment = Alignment.Center) {
-            Text("↗", style = ink(20.sp, accent, mono = true))
+            Text("\u2197", style = ink(20.sp, accent, mono = true))
         }
         Spacer(Modifier.width(14.dp))
         Text(
-            "search the web for \u201C$query\u201D",
+            "search $engineName for \u201C$query\u201D",
             style = ink(15.sp, Dim), maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** A system settings screen that matched the query, e.g. "wifi". */
+@Composable
+private fun SettingRow(entry: SettingsEntry, accent: Color, onOpen: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().pressableRow(onClick = onOpen).padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(49.dp), contentAlignment = Alignment.Center) {
+            Text("\u203A", style = ink(22.sp, accent, mono = true))
+        }
+        Spacer(Modifier.width(14.dp))
+        Text(
+            entry.label, style = ink(19.sp, serif = true, italic = true),
+            maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+        )
+        Text("SETTINGS", style = ink(11.sp, Dim, mono = true, tracking = 1.sp))
+    }
+}
+
+/** A bang such as "y cats": shows the prefix that was recognised and what it will search. */
+@Composable
+private fun BangRow(bang: SearchBang, query: String, accent: Color, onOpen: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().pressableRow(onClick = onOpen).padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(49.dp), contentAlignment = Alignment.Center) {
+            Text(bang.key, style = ink(16.sp, accent, mono = true))
+        }
+        Spacer(Modifier.width(14.dp))
+        Text(
+            "${bang.name} \u201C$query\u201D",
+            style = ink(16.sp), maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
     }
 }
