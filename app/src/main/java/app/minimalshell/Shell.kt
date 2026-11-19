@@ -226,7 +226,7 @@ fun ShellDock(
         val radius = GROWTH_STEP * 3
         // start high enough to stay clear of the navigation bar; neighbours sit one tile plus a little apart
         val start = asin(((bottomInset + 42.dp) / radius).coerceIn(0f, 0.9f).toDouble())
-        val step = 2.0 * asin(((SHELL_TILE + 8.dp) / (2 * radius)).toDouble())
+       val step = 2.0 * asin(((SHELL_TILE + 8.dp) / (radius * 2f)).toDouble())
         fun cx(i: Int): Dp = w - radius * cos(start + step * i).toFloat()
         fun cy(i: Int): Dp = h - radius * sin(start + step * i).toFloat()
 
