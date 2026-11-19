@@ -53,11 +53,16 @@ import androidx.compose.ui.text.font.FontStyle
 // unless the user picks another colour (or "follow the wallpaper") in settings.
 const val PEACH_ARGB = 0xFFFFB48A.toInt()
 val Peach = Color(PEACH_ARGB)
-val Sand = Color(0xFFF4E9DC)
-val Sea = Color(0xFF0F1B21)
 
-val Dim = Sand.copy(alpha = 0.7f)
-val Hair = Sand.copy(alpha = 0.18f)
+/** Settings value meaning "use the accent of the current mood" (the default). 0 means "follow the wallpaper". */
+const val ACCENT_MOOD = 1
+
+// The colours come from the current mood (Shell.kt), so the whole UI re-tints when it changes.
+// Sand is the foreground (text, lines) and Sea the surface everything sits on; the names are historical.
+val Sand: Color get() = ShellMood.palette.ink
+val Sea: Color get() = ShellMood.palette.bg
+val Dim: Color get() = Sand.copy(alpha = 0.7f)
+val Hair: Color get() = Sand.copy(alpha = 0.18f)
 val Mono = FontFamily.Monospace
 /** The system serif: the clock and the drawer's section letters use it, everything else stays sans. */
 val Serif = FontFamily.Serif
@@ -205,7 +210,7 @@ fun AppMenu(app: AppEntry, state: ShellViewModel, expanded: Boolean, onDismiss: 
 @Composable
 private fun MenuItem(label: String, onClick: () -> Unit) {
     DropdownMenuItem(
-        text = { Text(label, style = TextStyle(color = Sand, fontSize = 17.sp, fontFamily = Serif)) },
+        text = { Text(label, style = TextStyle(color = Sand, fontSize = 16.sp)) },
         onClick = onClick,
     )
 }

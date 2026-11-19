@@ -32,6 +32,10 @@ import androidx.compose.foundation.background
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.CompositionLocalProvider
+import android.app.Activity
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 
 class MainActivity : ComponentActivity() {
     private val vm: ShellViewModel by viewModels()
@@ -57,7 +61,26 @@ class MainActivity : ComponentActivity() {
 fun LauncherRoot(state: ShellViewModel, homeSignal: Int) {
     val apps = state.apps ?: emptyList()
     val wallpaperAccent by rememberAccent()
-    val accent = if (state.accentOverride != 0) Color(state.accentOverride) else wallpaperAccent
+    val tick by rememberTick()
+
+    // The mood: always the dark night palette, or (if the user asks) drifting with the time of day.
+    LaunchedEffect(tick.dayFraction, state.moodFollowsDay) {
+        ShellMood.use(if (state.moodFollowsDay) Palettes.at((tick.dayFraction * 1440f).toInt()) else Palettes.Night)
+    }
+    val accent = when (state.accentOverride) {
+        ACCENT_MOOD -> ShellMood.palette.accent
+        0 -> wallpaperAccent
+        else -> Color(state.accentOverride)
+    }
+    // light moods need dark status and navigation bar icons
+    val view = LocalView.current
+    SideEffect {
+        (view.context as? Activity)?.window?.let { w ->
+            val c = WindowCompat.getInsetsController(w, view)
+            c.isAppearanceLightStatusBars = ShellMood.palette.light
+            c.isAppearanceLightNavigationBars = ShellMood.palette.light
+        }
+    }
 
     val scope = rememberCoroutineScope()
     val drawer = remember { DrawerState(scope) }
@@ -82,8 +105,10 @@ fun LauncherRoot(state: ShellViewModel, homeSignal: Int) {
         if (state.ready) {
             CompositionLocalProvider(LocalDrawerState provides drawer) {
                 Box(Modifier.fillMaxSize()) {
+                    ShellBackdrop(solid = state.shellBackdrop)
                     Home(
                         apps, state, accent,
+                        tick = tick,
                         appsLoaded = state.apps != null,
                         drawer = drawer,
                         onLongPress = { menuOpen = true },

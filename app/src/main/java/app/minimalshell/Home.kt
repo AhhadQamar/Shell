@@ -67,13 +67,13 @@ fun Home(
     apps: List<AppEntry>,
     state: ShellViewModel,
     accent: Color,
+    tick: Tick,
     appsLoaded: Boolean,
     drawer: DrawerState,
     onLongPress: () -> Unit,
 ) {
     val ctx = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    val tick by rememberTick()
     val shadeThreshold = with(LocalDensity.current) { 80.dp.toPx() }
     val netDrag = remember { FloatArray(1) } // finger travel of the current swipe; positive = down
     val dock = state.pinned.mapNotNull { k -> apps.firstOrNull { it.key == k } }.take(MAX_PINNED)
@@ -128,95 +128,81 @@ fun Home(
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Sea.copy(0.6f))))
         )
 
-        Row(
+        // the pinned apps: on a growth line fanning up from the bottom-right corner, where the thumb rests
+        ShellDock(keys = dock.map { it.key }, slots = MAX_PINNED, entrance = entrance) { i ->
+            val app = dock[i]
+            var menu by remember { mutableStateOf(false) }
+            Box {
+                ShellIcon(
+                    app, SHELL_TILE,
+                    Modifier.pressable(onClick = { state.launch(app) }, onLongClick = { menu = true }),
+                )
+                AppMenu(app, state, menu) { menu = false }
+            }
+        }
+
+        // everything else sits at the top left: the clock is the hero
+        Column(
             Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.systemBars)
-                .padding(start = 24.dp, top = 12.dp, bottom = 12.dp)
+                .padding(start = 24.dp, end = 24.dp, top = 12.dp, bottom = 12.dp)
         ) {
-            // left: the clock is the hero
-            Column(Modifier.weight(1f).fillMaxHeight()) {
+            Row(
+                Modifier.fillMaxWidth().entrance(entrance, 0),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(tick.date.uppercase(), style = ink(11.sp, mono = true, tracking = 1.5.sp))
                 Text(
                     (if (tick.charging) "+" else "") + "${tick.battery}%",
                     style = ink(12.sp, accent, mono = true, tracking = 1.sp),
-                    modifier = Modifier.entrance(entrance, 0),
                 )
-
-                Spacer(Modifier.weight(1f))
-
-                Text(
-                    tick.dayName,
-                    style = ink(26.sp, accent, serif = true, italic = true),
-                    modifier = Modifier.entrance(entrance, 60),
-                )
-                Text(
-                    "${tick.longDate} · wk ${tick.weekNumber}".uppercase(),
-                    style = ink(11.sp, Dim, mono = true, tracking = 1.sp),
-                    modifier = Modifier.padding(top = 2.dp, bottom = 6.dp).entrance(entrance, 90),
-                )
-                StackedClock(tick.time, accent, Modifier.entrance(entrance, 140))
-                tick.alarm?.let {
-                    Text(
-                        it.uppercase(),
-                        style = ink(11.sp, accent, mono = true, tracking = 1.sp),
-                        modifier = Modifier.padding(top = 6.dp).entrance(entrance, 220),
-                    )
-                }
-                Text(
-                    "${tick.timeLeft} left today".uppercase(),
-                    style = ink(11.sp, Dim, mono = true, tracking = 1.sp),
-                    modifier = Modifier.padding(top = 4.dp).entrance(entrance, 260),
-                )
-
-                Spacer(Modifier.height(20.dp))
-
-                // only suggest pinning once we know there really are no pins, not while apps are still loading
-                if (appsLoaded && state.pinned.isEmpty()) {
-                    Text(
-                        "long-press an app in the drawer to pin it",
-                        style = ink(11.sp, Dim, mono = true),
-                        modifier = Modifier.padding(end = 12.dp, bottom = 8.dp),
-                    )
-                }
-
-                // handle: two small swells; tap it (or swipe up anywhere) to open the drawer
-                Row(
-                    Modifier
-                        .height(44.dp)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            role = Role.Button,
-                            onClickLabel = "Open apps",
-                        ) { drawer.open() }
-                        .entrance(entrance, 300),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    SwellHandle(accent, Modifier.size(34.dp, 10.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Text("ALL APPS", style = ink(11.sp, Dim, mono = true, tracking = 2.sp))
-                }
             }
 
-            // right: the day as a thread, with the pinned apps strung on it like pearls
-            ThreadDock(
-                fraction = tick.dayFraction,
-                accent = accent,
-                entrance = entrance,
-                slots = MAX_PINNED,
-                keys = dock.map { it.key },
-                modifier = Modifier.width(88.dp).fillMaxHeight(),
-            ) { i ->
-                val app = dock[i]
-                var menu by remember { mutableStateOf(false) }
-                Box {
-                    Porthole(
-                        app, PEARL,
-                        Modifier.pressable(onClick = { state.launch(app) }, onLongClick = { menu = true }),
-                        solid = true,
-                    )
-                    AppMenu(app, state, menu) { menu = false }
-                }
+            StackedClock(tick.time, accent, Modifier.padding(top = 18.dp).entrance(entrance, 100))
+            Text(
+                tick.dayName, style = ink(17.sp),
+                modifier = Modifier.padding(top = 8.dp, start = 4.dp).entrance(entrance, 180),
+            )
+            tick.alarm?.let {
+                Text(
+                    it.uppercase(), style = ink(11.sp, accent, mono = true, tracking = 1.sp),
+                    modifier = Modifier.padding(top = 4.dp, start = 4.dp).entrance(entrance, 220),
+                )
+            }
+            Text(
+                "${tick.timeLeft} left today".uppercase(),
+                style = ink(11.sp, Dim, mono = true, tracking = 1.sp),
+                modifier = Modifier.padding(top = 4.dp, start = 4.dp).entrance(entrance, 260),
+            )
+
+            // only suggest pinning once we know there really are no pins, not while apps are still loading
+            if (appsLoaded && state.pinned.isEmpty()) {
+                Text(
+                    "long-press an app in the drawer to pin it",
+                    style = ink(11.sp, Dim, mono = true),
+                    modifier = Modifier.padding(top = 16.dp, start = 4.dp, end = 120.dp),
+                )
+            }
+
+            Spacer(Modifier.weight(1f))
+
+            // handle: tap it (or swipe up anywhere) to open the drawer. Kept short, so it stays clear of the first pinned app.
+            Row(
+                Modifier
+                    .height(44.dp)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Button,
+                        onClickLabel = "Open apps",
+                    ) { drawer.open() }
+                    .entrance(entrance, 320),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(10.dp).background(accent, ScallopShape()))
+                Spacer(Modifier.width(10.dp))
+                Text("APPS", style = ink(11.sp, Dim, mono = true, tracking = 2.sp))
             }
         }
     }
@@ -251,6 +237,6 @@ private fun MenuRow(label: String, accent: Color, onClick: () -> Unit) {
     ) {
         Text("›", style = ink(18.sp, accent, mono = true))
         Spacer(Modifier.width(12.dp))
-        Text(label, style = ink(24.sp, serif = true, italic = true))
+        Text(label, style = ink(21.sp))
     }
 }

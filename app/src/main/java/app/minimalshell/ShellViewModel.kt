@@ -49,7 +49,7 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var counts by mutableStateOf<Map<String, Int>>(emptyMap())
         private set
-    var accentOverride by mutableIntStateOf(PEACH_ARGB)
+    var accentOverride by mutableIntStateOf(ACCENT_MOOD)
         private set
     var showFrequent by mutableStateOf(true)
         private set
@@ -60,6 +60,10 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
     var instantLaunch by mutableStateOf(false)
         private set
     var hideHiddenInSearch by mutableStateOf(false)
+        private set
+    var moodFollowsDay by mutableStateOf(false)
+        private set
+    var shellBackdrop by mutableStateOf(true)
         private set
 
     /** Keys of the apps installed right now; empty until the first successful load. */
@@ -165,6 +169,16 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
         persist(on) { saveInstantLaunch(it) }
     }
 
+    fun updateMoodFollowsDay(on: Boolean) {
+        moodFollowsDay = on
+        persist(on) { saveMoodFollowsDay(it) }
+    }
+
+    fun updateShellBackdrop(on: Boolean) {
+        shellBackdrop = on
+        persist(on) { saveShellBackdrop(it) }
+    }
+
     fun updateHideHiddenInSearch(on: Boolean) {
         hideHiddenInSearch = on
         persist(on) { saveHideHiddenInSearch(it) }
@@ -185,6 +199,8 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
         searchEngine = s.searchEngine
         instantLaunch = s.instantLaunch
         hideHiddenInSearch = s.hideHiddenInSearch
+        moodFollowsDay = s.moodFollowsDay
+        shellBackdrop = s.shellBackdrop
     }
 
     private fun applyApps(list: List<AppEntry>) {

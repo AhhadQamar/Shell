@@ -87,6 +87,10 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import kotlin.math.PI
 import kotlin.math.sin
 import kotlinx.coroutines.delay
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.foundation.border
+import kotlin.math.roundToInt
 
 private sealed interface Item {
     data class Calc(val result: String) : Item
@@ -315,19 +319,34 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                 .graphicsLayer { translationY = (1f - drawer.progress) * size.height }
                 .onSizeChanged { drawer.travelPx = it.height.toFloat() }
                 .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.3f to Sea.copy(0.78f),
-                        1f to Sea.copy(0.94f),
-                    )
-                )
+                .drawBehind {
+                    // the sheet: an opaque surface whose top edge is a row of scallops, like the rim of a shell
+                    val n = (size.width / 30.dp.toPx()).roundToInt().coerceAtLeast(1)
+                    val bw = size.width / n
+                    val r = bw / 2f
+                    fun scallops(path: Path, count: Int) {
+                        path.moveTo(0f, r)
+                        for (i in 0 until count) path.arcTo(Rect(i * bw, 0f, (i + 1) * bw, 2f * r), 180f, 180f, false)
+                    }
+                    val sheet = Path()
+                    scallops(sheet, n)
+                    sheet.lineTo(size.width, size.height)
+                    sheet.lineTo(0f, size.height)
+                    sheet.close()
+                    drawPath(sheet, Sea.copy(alpha = 0.96f))
+                    val rim = Path()
+                    scallops(rim, n)
+                    drawPath(rim, Sand.copy(alpha = 0.22f), style = Stroke(1.dp.toPx()))
+                    val lead = Path()
+                    scallops(lead, minOf(2, n))
+                    drawPath(lead, accent, style = Stroke(1.8.dp.toPx(), cap = StrokeCap.Round))
+                }
                 .pointerInput(Unit) { detectTapGestures { } } // taps on the panel itself don't close it
                 .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.ime))
                 // the height cap sits inside the insets padding, so a visible keyboard pushes the panel up
                 // instead of eating into the room the list has
                 .heightIn(max = panelMax)
-                .padding(start = 24.dp, end = 10.dp)
+                .padding(start = 24.dp, end = 10.dp, top = 24.dp)
         ) {
             Box(Modifier.weight(1f, fill = false)) {
                 Row(Modifier.fillMaxWidth()) {
@@ -374,10 +393,16 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                 }
             }
 
-            // the "horizon" of the drawer: a gently rippling line, with the query below it
-            TideLine(accent, Modifier.padding(end = 14.dp))
+            // the query lives in a pill at the bottom, within thumb reach
+            Spacer(Modifier.height(10.dp))
             Row(
-                Modifier.fillMaxWidth().padding(end = 14.dp, top = 12.dp, bottom = 14.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(end = 14.dp, bottom = 14.dp)
+                    .height(46.dp)
+                    .background(Sand.copy(alpha = 0.08f), RoundedCornerShape(23.dp))
+                    .border(1.dp, Sand.copy(alpha = 0.16f), RoundedCornerShape(23.dp))
+                    .padding(horizontal = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("›", style = ink(22.sp, accent, mono = true))
@@ -387,8 +412,8 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                     onValueChange = { query = it },
                     singleLine = true,
                     textStyle = TextStyle(
-                        color = Sand, fontSize = 17.sp,
-                        fontFamily = Mono, shadow = Lift,
+                        color = Sand, fontSize = 16.sp,
+                        shadow = Lift,
                     ),
                     cursorBrush = SolidColor(accent),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
@@ -406,7 +431,7 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                         Box {
                             if (query.isEmpty()) {
                                 Text(
-                                    "apps, settings, sums, \u201Cy cats\u201D", style = ink(15.sp, Dim, mono = true),
+                                    "apps, settings, sums, \u201Cy cats\u201D", style = ink(14.sp, Dim),
                                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 )
                             }
@@ -430,7 +455,9 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
 @Composable
 private fun SectionHeader(letter: Char, count: Int, accent: Color) {
     Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(letter.toString(), style = ink(32.sp, accent, serif = true, italic = true))
+        Box(Modifier.size(30.dp).background(accent, ScallopShape()), contentAlignment = Alignment.Center) {
+            Text(letter.toString(), style = ink(14.sp, Sea, FontWeight.Bold))
+        }
         Spacer(Modifier.width(12.dp))
         Hairline(Modifier.weight(1f))
         Spacer(Modifier.width(10.dp))
@@ -448,7 +475,7 @@ private fun AppRow(app: AppEntry, state: ShellViewModel, accent: Color, highligh
             Modifier
                 .fillMaxWidth()
                 .pressableRow(onClick = onOpen, onLongClick = { menu = true })
-                .padding(vertical = 9.dp),
+                .padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -458,7 +485,7 @@ private fun AppRow(app: AppEntry, state: ShellViewModel, accent: Color, highligh
                     .background(if (highlight) accent else Color.Transparent, RoundedCornerShape(2.dp))
             )
             Spacer(Modifier.width(12.dp))
-            AppIcon(app, 34.dp, label = null)
+            ShellIcon(app, 40.dp, label = null)
             Spacer(Modifier.width(14.dp))
             Text(
                 app.label,
@@ -480,49 +507,29 @@ private fun AppRow(app: AppEntry, state: ShellViewModel, accent: Color, highligh
 private fun FrequentRow(apps: List<AppEntry>, state: ShellViewModel, onOpen: (AppEntry) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 10.dp)) {
         Row(Modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("often", style = ink(15.sp, Dim, serif = true, italic = true))
+            Text("OFTEN", style = ink(11.sp, Dim, mono = true, tracking = 2.sp))
             Spacer(Modifier.width(10.dp))
             Hairline(Modifier.weight(1f))
         }
-        val swing = 4.dp // how far the thread (and so each pearl) moves up and down
-        val wavelength = 120.dp
-        Box(Modifier.fillMaxWidth()) {
-            // a short thread behind the pearls, like the one on Home
-            Canvas(Modifier.matchParentSize()) {
-                val amp = swing.toPx()
-                val wl = wavelength.toPx()
-                val mid = 28.dp.toPx() // the centre of the 56dp pearls
-                val step = 4.dp.toPx()
-                val p = Path()
-                p.moveTo(0f, mid)
-                var x = step
-                while (x < size.width) {
-                    p.lineTo(x, mid + amp * sin(2.0 * PI * x / wl).toFloat())
-                    x += step
-                }
-                drawPath(p, Sand.copy(alpha = 0.3f), style = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round))
-            }
-            Row(Modifier.fillMaxWidth()) {
-                apps.forEachIndexed { i, app ->
-                    key(app.key) {
-                        var menu by remember { mutableStateOf(false) }
-                        Box {
-                            Column(
-                                Modifier
-                                    .width(76.dp)
-                                    .offset(y = swing * sin(2.0 * PI * ((76.dp * i + 38.dp) / wavelength)).toFloat())
-                                    .pressable(onClick = { onOpen(app) }, onLongClick = { menu = true }),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                Porthole(app, 56.dp, label = null, solid = true)
-                                Spacer(Modifier.height(6.dp))
-                                Text(
-                                    app.label, style = ink(11.sp, Sand.copy(0.85f)),
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-                                )
-                            }
-                            AppMenu(app, state, menu) { menu = false }
+        Row(Modifier.fillMaxWidth()) {
+            apps.forEach { app ->
+                key(app.key) {
+                    var menu by remember { mutableStateOf(false) }
+                    Box {
+                        Column(
+                            Modifier
+                                .width(76.dp)
+                                .pressable(onClick = { onOpen(app) }, onLongClick = { menu = true }),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            ShellIcon(app, 56.dp, label = null)
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                app.label, style = ink(11.sp, Sand.copy(0.85f)),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                            )
                         }
+                        AppMenu(app, state, menu) { menu = false }
                     }
                 }
             }
@@ -575,7 +582,7 @@ private fun SettingRow(entry: SettingsEntry, accent: Color, onOpen: () -> Unit) 
         }
         Spacer(Modifier.width(14.dp))
         Text(
-            entry.label, style = ink(19.sp, serif = true, italic = true),
+            entry.label, style = ink(18.sp),
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
         )
         Text("SETTINGS", style = ink(11.sp, Dim, mono = true, tracking = 1.sp))
@@ -643,56 +650,24 @@ private fun SpineRail(letters: List<Char>, accent: Color, onJump: (Char) -> Unit
             },
         contentAlignment = Alignment.CenterEnd,
     ) {
-        // the same thread as on Home, standing upright: one tick per letter, and while you drag, the thread fills
-        // up to the letter you are on, with a bead
-        Canvas(Modifier.fillMaxHeight().width(14.dp)) {
-            val cx = size.width / 2f
-            val amp = 3.5.dp.toPx()
-            val wl = 90.dp.toPx()
-            val step = 4.dp.toPx()
-            fun x(y: Float): Float = cx + amp * sin(2.0 * PI * y / wl).toFloat()
-            fun thread(y0: Float, y1: Float): Path {
-                val p = Path()
-                p.moveTo(x(y0), y0)
-                var y = y0 + step
-                while (y < y1) {
-                    p.lineTo(x(y), y)
-                    y += step
-                }
-                p.lineTo(x(y1), y1)
-                return p
-            }
-            drawPath(thread(0f, size.height), Sand.copy(alpha = 0.3f), style = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round))
-            val n = letters.size
-            for (i in 0 until n) { // letter i, 0 = bottom
-                val y = (n - i - 0.5f) / n * size.height
-                drawLine(
-                    if (i == active) accent else Sand.copy(alpha = 0.4f),
-                    Offset(x(y) - 7.dp.toPx(), y), Offset(x(y) - 2.dp.toPx(), y),
-                    strokeWidth = 1.dp.toPx(),
-                )
-            }
-            if (active >= 0) {
-                val yActive = (n - active - 0.5f) / n * size.height
-                drawPath(thread(yActive, size.height), accent, style = Stroke(1.8.dp.toPx(), cap = StrokeCap.Round))
-                val center = Offset(x(yActive), yActive)
-                drawCircle(accent.copy(alpha = 0.28f), radius = 8.dp.toPx(), center = center)
-                drawCircle(accent, radius = 3.6.dp.toPx(), center = center)
-            }
-        }
         Column(
-            Modifier.fillMaxHeight().padding(end = 22.dp),
+            Modifier.fillMaxHeight().padding(end = 6.dp),
             verticalArrangement = Arrangement.SpaceEvenly,
             horizontalAlignment = Alignment.End,
         ) {
             for (i in letters.indices.reversed()) {
-                Text(letters[i].toString(), style = ink(12.sp, if (i == active) accent else Dim, serif = true, italic = true))
+                Text(
+                    letters[i].toString(),
+                    style = ink(12.sp, if (i == active) accent else Dim, if (i == active) FontWeight.Bold else FontWeight.Normal),
+                    // the letter you are on sits in a soft bead of the accent colour
+                    modifier = Modifier.drawBehind { if (i == active) drawCircle(accent.copy(alpha = 0.22f), radius = 11.dp.toPx()) },
+                )
             }
         }
         if (active >= 0) {
             Text(
                 letters[active].toString(),
-                style = ink(64.sp, accent, FontWeight.Light, serif = true, italic = true),
+                style = ink(64.sp, accent, FontWeight.Light),
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .offset {

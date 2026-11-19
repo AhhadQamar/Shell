@@ -30,6 +30,8 @@ private val ACCENT = intPreferencesKey("accent")
 private val AUTO_KEYBOARD = booleanPreferencesKey("autoKeyboard")
 private val FREQUENT = booleanPreferencesKey("frequent")
 private val SEARCH_ENGINE = stringPreferencesKey("searchEngine")
+private val MOOD_AUTO = booleanPreferencesKey("moodAuto")
+private val SHELL_BACKDROP = booleanPreferencesKey("shellBackdrop")
 private val INSTANT_LAUNCH = booleanPreferencesKey("instantLaunch")
 private val HIDE_HIDDEN_IN_SEARCH = booleanPreferencesKey("hiddenInSearch")
 
@@ -41,13 +43,17 @@ class SettingsStore(context: Context) {
         val pinned: List<String> = emptyList(),
         val hidden: Set<String> = emptySet(),
         val counts: Map<String, Int> = emptyMap(),
-        /** 0 means "use the wallpaper". */
-        val accent: Int = PEACH_ARGB,
+        /** ACCENT_MOOD = the current mood's accent (default), 0 = the wallpaper's, anything else = a chosen colour. */
+        val accent: Int = ACCENT_MOOD,
         val autoKeyboard: Boolean = false,
         val showFrequent: Boolean = true,
         val searchEngine: String = "duckduckgo",
         val instantLaunch: Boolean = false,
         val hideHiddenInSearch: Boolean = false,
+        /** False (default): always the dark night palette. True: colours drift through dawn, day, dusk and night. */
+        val moodFollowsDay: Boolean = false,
+        /** True (default): the shell's own backdrop. False: the user's wallpaper. */
+        val shellBackdrop: Boolean = true,
     )
 
     /** Never throws (except cancellation): unreadable storage just means defaults. */
@@ -64,12 +70,14 @@ class SettingsStore(context: Context) {
             pinned = p[PINNED].orEmpty().split(",").filter { it.isNotBlank() },
             hidden = p[HIDDEN].orEmpty(),
             counts = parseCounts(p[COUNTS].orEmpty()),
-            accent = p[ACCENT] ?: PEACH_ARGB,
+            accent = p[ACCENT] ?: ACCENT_MOOD,
             autoKeyboard = p[AUTO_KEYBOARD] ?: false,
             showFrequent = p[FREQUENT] ?: true,
             searchEngine = p[SEARCH_ENGINE] ?: "duckduckgo",
             instantLaunch = p[INSTANT_LAUNCH] ?: false,
             hideHiddenInSearch = p[HIDE_HIDDEN_IN_SEARCH] ?: false,
+            moodFollowsDay = p[MOOD_AUTO] ?: false,
+            shellBackdrop = p[SHELL_BACKDROP] ?: true,
         )
     }
 
@@ -83,6 +91,8 @@ class SettingsStore(context: Context) {
     suspend fun saveSearchEngine(id: String) = write { it[SEARCH_ENGINE] = id }
     suspend fun saveInstantLaunch(on: Boolean) = write { it[INSTANT_LAUNCH] = on }
     suspend fun saveHideHiddenInSearch(on: Boolean) = write { it[HIDE_HIDDEN_IN_SEARCH] = on }
+    suspend fun saveMoodFollowsDay(on: Boolean) = write { it[MOOD_AUTO] = on }
+    suspend fun saveShellBackdrop(on: Boolean) = write { it[SHELL_BACKDROP] = on }
 
     private suspend fun write(change: (MutablePreferences) -> Unit) {
         try {

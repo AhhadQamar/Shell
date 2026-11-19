@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import android.os.Build
+import androidx.compose.ui.text.font.FontWeight
 
 private val Presets = listOf(
     0xFFFFB48A, 0xFFFF9E6B, 0xFF8AB4F8, 0xFF7BD88F, 0xFFE58AC0, 0xFFC9A7FF, 0xFFFFD166,
@@ -77,9 +78,9 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 20.dp)
         ) {
-            Text("Settings", style = ink(34.sp, accent, serif = true, italic = true))
-            Spacer(Modifier.height(6.dp))
-            TideLine(accent)
+            Text("Settings", style = ink(30.sp, accent, FontWeight.Light))
+            Spacer(Modifier.height(8.dp))
+            Hairline(Modifier.fillMaxWidth())
 
             if (!isDefault) {
                 Row(
@@ -87,7 +88,7 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("make shell your home", style = ink(19.sp, serif = true))
+                        Text("make shell your home", style = ink(18.sp))
                         Text("the home button and app shortcuts need it", style = ink(11.sp, Dim, mono = true))
                     }
                     Text("set ›", style = ink(13.sp, accent, mono = true))
@@ -97,9 +98,17 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
 
             // accent
             Spacer(Modifier.height(18.dp))
-            Text("accent", style = ink(19.sp, serif = true))
+            Text("accent", style = ink(18.sp))
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                val mood = state.accentOverride == ACCENT_MOOD
+                Box(
+                    Modifier
+                        .size(32.dp)
+                        .background(ShellMood.palette.accent, ScallopShape())
+                        .border(if (mood) 2.dp else 0.dp, if (mood) Sand else Color.Transparent, ScallopShape())
+                        .clickable { state.setAccent(ACCENT_MOOD) }
+                )
                 val auto = state.accentOverride == 0
                 Box(
                     Modifier
@@ -120,8 +129,14 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
                 }
             }
             Spacer(Modifier.height(6.dp))
-            Text("A follows your wallpaper", style = ink(11.sp, Dim, mono = true))
+            Text("the shell follows the mood; A follows your wallpaper", style = ink(11.sp, Dim, mono = true))
 
+            SettingToggle("colours follow the day", "dawn, day, dusk and night; off keeps it dark", state.moodFollowsDay, accent) {
+                state.updateMoodFollowsDay(it)
+            }
+            SettingToggle("shell background", "the shell's own backdrop instead of your wallpaper", state.shellBackdrop, accent) {
+                state.updateShellBackdrop(it)
+            }
             SettingToggle("frequent apps", "most-used apps at the bottom of the drawer", state.showFrequent, accent) {
                 state.updateShowFrequent(it)
             }
@@ -141,7 +156,7 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("search engine", style = ink(19.sp, serif = true))
+                    Text("search engine", style = ink(18.sp))
                     Text("for the web search at the end of the drawer", style = ink(12.sp, Dim))
                 }
                 Text(SearchEngines.byId(state.searchEngine).name + " \u203A", style = ink(13.sp, accent, mono = true))
@@ -156,7 +171,7 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("double-tap to lock", style = ink(19.sp, serif = true))
+                        Text("double-tap to lock", style = ink(18.sp))
                         Text(
                             if (lockOn) "double-tap the home screen to lock; also opens the shade reliably"
                             else "needs shell's lock service, switched on in accessibility settings",
@@ -204,7 +219,7 @@ private fun SettingToggle(title: String, subtitle: String, checked: Boolean, acc
     Spacer(Modifier.height(22.dp))
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = ink(19.sp, serif = true))
+            Text(title, style = ink(18.sp))
             Text(subtitle, style = ink(12.sp, Dim))
         }
         Switch(
