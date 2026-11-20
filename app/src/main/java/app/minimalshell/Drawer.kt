@@ -91,6 +91,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.foundation.border
 import kotlin.math.roundToInt
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.derivedStateOf
 
 private sealed interface Item {
     data class Calc(val result: String) : Item
@@ -200,7 +203,6 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val focusRequester = remember { FocusRequester() }
-    val panelMax = (LocalConfiguration.current.screenHeightDp * 0.75f).dp
 
     var query by remember { mutableStateOf("") }
     val q = query.trim()
@@ -212,6 +214,20 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
     val firstSetting = model.items.firstOrNull { it is Item.Setting } as? Item.Setting
     val engine = SearchEngines.byId(state.searchEngine)
     val browsing = q.isEmpty()
+    // The section the topmost visible row belongs to. In the bottom-up list a header comes after its apps, so
+    // look upward from the top row to the next header. Null while searching (no headers then).
+    val currentLetter by remember(model) {
+        derivedStateOf {
+            val top = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0
+            var letter: Char? = null
+            var i = top
+            while (letter == null && i < model.items.size) {
+                letter = (model.items[i] as? Item.Header)?.letter
+                i++
+            }
+            letter
+        }
+    }
     val appCount = model.items.count { it is Item.App }
     val countLabel = when {
         browsing -> "$appCount APPS"
@@ -312,43 +328,40 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
             )
             .nestedScroll(drawerScroll) // swipe down on the list once it can't scroll any further
     ) {
-        Column(
+        // a full-screen page that rises over Home. It carries its own backdrop, so the shell's arcs and glow show
+        // between the words, and Home's clock and apps never show through the list.
+        Box(
             Modifier
                 .align(Alignment.BottomCenter)
                 // slides in and out by translation only: no layout or recomposition while it moves
                 .graphicsLayer { translationY = (1f - drawer.progress) * size.height }
                 .onSizeChanged { drawer.travelPx = it.height.toFloat() }
-                .fillMaxWidth()
-                .drawBehind {
-                    // the sheet: an opaque surface whose top edge is a row of scallops, like the rim of a shell
-                    val n = (size.width / 30.dp.toPx()).roundToInt().coerceAtLeast(1)
-                    val bw = size.width / n
-                    val r = bw / 2f
-                    fun scallops(path: Path, count: Int) {
-                        path.moveTo(0f, r)
-                        for (i in 0 until count) path.arcTo(Rect(i * bw, 0f, (i + 1) * bw, 2f * r), 180f, 180f, false)
-                    }
-                    val sheet = Path()
-                    scallops(sheet, n)
-                    sheet.lineTo(size.width, size.height)
-                    sheet.lineTo(0f, size.height)
-                    sheet.close()
-                    drawPath(sheet, Sea.copy(alpha = 0.96f))
-                    val rim = Path()
-                    scallops(rim, n)
-                    drawPath(rim, Sand.copy(alpha = 0.22f), style = Stroke(1.dp.toPx()))
-                    val lead = Path()
-                    scallops(lead, minOf(2, n))
-                    drawPath(lead, accent, style = Stroke(1.8.dp.toPx(), cap = StrokeCap.Round))
-                }
-                .pointerInput(Unit) { detectTapGestures { } } // taps on the panel itself don't close it
-                .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.ime))
-                // the height cap sits inside the insets padding, so a visible keyboard pushes the panel up
-                // instead of eating into the room the list has
-                .heightIn(max = panelMax)
-                .padding(start = 24.dp, end = 10.dp, top = 24.dp)
+                .fillMaxSize()
+                .pointerInput(Unit) { detectTapGestures { } } // taps on the page itself don't close it
         ) {
-            Box(Modifier.weight(1f, fill = false)) {
+            if (!state.shellBackdrop) Box(Modifier.matchParentSize().background(Sea.copy(alpha = 0.92f)))
+            ShellBackdrop(solid = state.shellBackdrop)
+            // the letter of the section you are in, huge and faint behind the words
+            Crossfade(targetState = currentLetter, animationSpec = tween(220), label = "ghost") { l ->
+                if (l != null) {
+                    Text(
+                        l.toString(),
+                        style = TextStyle(color = Sand.copy(alpha = 0.06f), fontSize = 240.sp, fontWeight = FontWeight.ExtraLight),
+                        modifier = Modifier.offset(x = (-12).dp, y = 56.dp),
+                    )
+                }
+            }
+        Column(
+            Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.ime))
+                .padding(start = 24.dp, end = 10.dp, top = 8.dp)
+        ) {
+            Row(Modifier.fillMaxWidth().padding(end = 14.dp, bottom = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(if (browsing) "ALL APPS" else "RESULTS", style = ink(11.sp, Dim, mono = true, tracking = 2.sp))
+                Text(countLabel, style = ink(11.sp, Dim, mono = true, tracking = 1.sp))
+            }
+            Box(Modifier.weight(1f)) {
                 Row(Modifier.fillMaxWidth()) {
                     LazyColumn(
                         state = listState,
@@ -373,7 +386,7 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                             when (val item = model.items[i]) {
                                 is Item.Calc -> CalcRow(item.result, accent) { copy(item.result) }
                                 is Item.Frequent -> FrequentRow(item.apps, state) { open(it) }
-                                is Item.Header -> SectionHeader(item.letter, item.count, accent)
+                                is Item.Header -> SectionHeader(item.letter, accent)
                                 is Item.App -> AppRow(
                                     item.app, state, accent,
                                     highlight = !browsing && item.app == model.first,
@@ -386,25 +399,17 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                     }
 
                     if (browsing && model.index.isNotEmpty()) {
-                        SpineRail(model.index.keys.toList(), accent) { letter ->
+                        SpineRail(model.index.keys.toList(), currentLetter, accent) { letter ->
                             model.index[letter]?.let { target -> scope.launch { listState.scrollToItem(target) } }
                         }
                     }
                 }
             }
 
-            // the query lives in a pill at the bottom, within thumb reach
-            Spacer(Modifier.height(10.dp))
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(end = 14.dp, bottom = 14.dp)
-                    .height(46.dp)
-                    .background(Sand.copy(alpha = 0.08f), RoundedCornerShape(23.dp))
-                    .border(1.dp, Sand.copy(alpha = 0.16f), RoundedCornerShape(23.dp))
-                    .padding(horizontal = 18.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            // the query: a bare line at the bottom, within thumb reach
+            Spacer(Modifier.height(6.dp))
+            Column(Modifier.fillMaxWidth().padding(end = 14.dp, bottom = 14.dp)) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("›", style = ink(22.sp, accent, mono = true))
                 Spacer(Modifier.width(10.dp))
                 BasicTextField(
@@ -439,29 +444,26 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                         }
                     },
                 )
-                Spacer(Modifier.width(8.dp))
-                Text(countLabel, style = ink(11.sp, Dim, mono = true, tracking = 1.sp))
                 if (query.isNotEmpty()) {
                     Text(
                         "×", style = ink(24.sp, Dim),
                         modifier = Modifier.clickable { query = "" }.padding(start = 8.dp, top = 6.dp, bottom = 6.dp, end = 6.dp),
                     )
                 }
+                }
+                Hairline(Modifier.fillMaxWidth())
             }
+        }
         }
     }
 }
 
 @Composable
-private fun SectionHeader(letter: Char, count: Int, accent: Color) {
-    Row(Modifier.fillMaxWidth().padding(top = 20.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(30.dp).background(accent, ScallopShape()), contentAlignment = Alignment.Center) {
-            Text(letter.toString(), style = ink(14.sp, Sea, FontWeight.Bold))
-        }
+private fun SectionHeader(letter: Char, accent: Color) {
+    Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(letter.toString(), style = ink(11.sp, accent, mono = true, tracking = 2.sp))
         Spacer(Modifier.width(12.dp))
         Hairline(Modifier.weight(1f))
-        Spacer(Modifier.width(10.dp))
-        Text(count.toString(), style = ink(11.sp, Dim, mono = true)) // how many apps are in this section
     }
 }
 
@@ -475,7 +477,7 @@ private fun AppRow(app: AppEntry, state: ShellViewModel, accent: Color, highligh
             Modifier
                 .fillMaxWidth()
                 .pressableRow(onClick = onOpen, onLongClick = { menu = true })
-                .padding(vertical = 6.dp),
+                .padding(vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -485,14 +487,16 @@ private fun AppRow(app: AppEntry, state: ShellViewModel, accent: Color, highligh
                     .background(if (highlight) accent else Color.Transparent, RoundedCornerShape(2.dp))
             )
             Spacer(Modifier.width(12.dp))
-            ShellIcon(app, 40.dp, label = null)
-            Spacer(Modifier.width(14.dp))
+            if (state.drawerIcons) {
+                ShellIcon(app, 40.dp, label = null)
+                Spacer(Modifier.width(14.dp))
+            }
             Text(
                 app.label,
                 style = ink(
-                    17.sp,
-                    Sand.copy(if (hidden) 0.5f else 0.94f),
-                    if (highlight) FontWeight.Medium else FontWeight.Normal,
+                    21.sp,
+                    Sand.copy(if (hidden) 0.5f else 0.96f),
+                    if (highlight) FontWeight.Normal else FontWeight.Light,
                 ),
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
@@ -511,25 +515,43 @@ private fun FrequentRow(apps: List<AppEntry>, state: ShellViewModel, onOpen: (Ap
             Spacer(Modifier.width(10.dp))
             Hairline(Modifier.weight(1f))
         }
-        Row(Modifier.fillMaxWidth()) {
-            apps.forEach { app ->
-                key(app.key) {
-                    var menu by remember { mutableStateOf(false) }
-                    Box {
-                        Column(
-                            Modifier
-                                .width(76.dp)
-                                .pressable(onClick = { onOpen(app) }, onLongClick = { menu = true }),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            ShellIcon(app, 56.dp, label = null)
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                app.label, style = ink(11.sp, Sand.copy(0.85f)),
-                                maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
-                            )
+        if (state.drawerIcons) {
+            Row(Modifier.fillMaxWidth()) {
+                apps.forEach { app ->
+                    key(app.key) {
+                        var menu by remember { mutableStateOf(false) }
+                        Box {
+                            Column(
+                                Modifier
+                                    .width(76.dp)
+                                    .pressable(onClick = { onOpen(app) }, onLongClick = { menu = true }),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                ShellIcon(app, 56.dp, label = null)
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    app.label, style = ink(11.sp, Sand.copy(0.85f)),
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                                )
+                            }
+                            AppMenu(app, state, menu) { menu = false }
                         }
-                        AppMenu(app, state, menu) { menu = false }
+                    }
+                }
+            }
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                apps.forEach { app ->
+                    key(app.key) {
+                        var menu by remember { mutableStateOf(false) }
+                        Box(Modifier.weight(1f, fill = false)) {
+                            Text(
+                                app.label, style = ink(18.sp, Sand.copy(0.96f), FontWeight.Light),
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.pressable(onClick = { onOpen(app) }, onLongClick = { menu = true }),
+                            )
+                            AppMenu(app, state, menu) { menu = false }
+                        }
                     }
                 }
             }
@@ -613,11 +635,13 @@ private fun BangRow(bang: SearchBang, query: String, accent: Color, onOpen: () -
  * letter is shown large to the left of the thumb.
  */
 @Composable
-private fun SpineRail(letters: List<Char>, accent: Color, onJump: (Char) -> Unit) {
+private fun SpineRail(letters: List<Char>, current: Char?, accent: Color, onJump: (Char) -> Unit) {
     var height by remember { mutableFloatStateOf(1f) }
     var active by remember { mutableIntStateOf(-1) } // index into letters; 0 = bottom
     val haptic = LocalHapticFeedback.current
     val jumpTo by rememberUpdatedState(onJump)
+    // while dragging, the letter under the finger; otherwise the section you are reading
+    val shown = if (active >= 0) active else current?.let { letters.indexOf(it) } ?: -1
 
     fun jump(y: Float) {
         val i = ((height - y) / height * letters.size).toInt().coerceIn(0, letters.lastIndex)
@@ -658,9 +682,9 @@ private fun SpineRail(letters: List<Char>, accent: Color, onJump: (Char) -> Unit
             for (i in letters.indices.reversed()) {
                 Text(
                     letters[i].toString(),
-                    style = ink(12.sp, if (i == active) accent else Dim, if (i == active) FontWeight.Bold else FontWeight.Normal),
+                    style = ink(12.sp, if (i == shown) accent else Dim, if (i == shown) FontWeight.Bold else FontWeight.Normal),
                     // the letter you are on sits in a soft bead of the accent colour
-                    modifier = Modifier.drawBehind { if (i == active) drawCircle(accent.copy(alpha = 0.22f), radius = 11.dp.toPx()) },
+                    modifier = Modifier.drawBehind { if (i == shown) drawCircle(accent.copy(alpha = 0.22f), radius = 11.dp.toPx()) },
                 )
             }
         }

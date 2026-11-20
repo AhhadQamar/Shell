@@ -137,6 +137,9 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
             SettingToggle("shell background", "the shell's own backdrop instead of your wallpaper", state.shellBackdrop, accent) {
                 state.updateShellBackdrop(it)
             }
+            SettingToggle("icons in the drawer", "off: just the names, lighter and calmer", state.drawerIcons, accent) {
+                state.updateDrawerIcons(it)
+            }
             SettingToggle("frequent apps", "most-used apps at the bottom of the drawer", state.showFrequent, accent) {
                 state.updateShowFrequent(it)
             }

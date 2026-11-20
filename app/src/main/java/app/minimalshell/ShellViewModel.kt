@@ -65,6 +65,8 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var shellBackdrop by mutableStateOf(true)
         private set
+    var drawerIcons by mutableStateOf(false)
+        private set
 
     /** Keys of the apps installed right now; empty until the first successful load. */
     private var liveKeys: Set<String> = emptySet()
@@ -174,6 +176,11 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
         persist(on) { saveMoodFollowsDay(it) }
     }
 
+    fun updateDrawerIcons(on: Boolean) {
+        drawerIcons = on
+        persist(on) { saveDrawerIcons(it) }
+    }
+
     fun updateShellBackdrop(on: Boolean) {
         shellBackdrop = on
         persist(on) { saveShellBackdrop(it) }
@@ -201,6 +208,7 @@ class ShellViewModel(application: Application) : AndroidViewModel(application) {
         hideHiddenInSearch = s.hideHiddenInSearch
         moodFollowsDay = s.moodFollowsDay
         shellBackdrop = s.shellBackdrop
+        drawerIcons = s.drawerIcons
     }
 
     private fun applyApps(list: List<AppEntry>) {
