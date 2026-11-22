@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "app.minimalshell"
-        minSdk = 27
+        minSdk = 23
         targetSdk = 35
         // CI sets GITHUB_RUN_NUMBER, so every build is newer than the last and installs as an in-place update.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
