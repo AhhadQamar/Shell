@@ -9,6 +9,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
 import android.content.pm.PackageManager
+import android.provider.AlarmClock
 
 private fun newTask(i: Intent): Intent = i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
@@ -101,4 +102,12 @@ fun openDefaultHomeSettings(ctx: Context) {
 
 fun openAccessibilitySettings(ctx: Context) {
     safeStart(ctx, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+}
+
+/**
+ * Opens the phone's clock app, whichever one it is (Google Clock, Samsung Clock...). Android has one standard way to
+ * ask for it, "show alarms", so no app name has to be guessed; the clock app decides which of its pages that lands on.
+ */
+fun openClock(ctx: Context) {
+    safeStart(ctx, Intent(AlarmClock.ACTION_SHOW_ALARMS), "No clock app found")
 }

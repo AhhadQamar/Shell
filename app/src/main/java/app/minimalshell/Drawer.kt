@@ -94,6 +94,7 @@ import kotlin.math.roundToInt
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.foundation.lazy.LazyListState
 
 private sealed interface Item {
     data class Calc(val result: String) : Item
@@ -120,10 +121,10 @@ private fun matchRank(a: AppEntry, s: String): Int = when {
 }
 
 /**
- * The list is drawn bottom-up (reverseLayout), so item 0 sits right above the search line, under the thumb.
- * That means: in search mode the best match is item 0; in browse mode the frequent apps are item 0.
- * Because a reversed list shows items bottom-to-top, each letter group is emitted last-app-first, header last,
- * so on screen it still reads: header, then apps A-Z downward.
+ * What the list shows, in the order it is drawn.
+ * Browsing: the frequent apps first, then each letter as a header followed by its apps, so it reads A to Z downward.
+ * Searching: the results, best first. The list is drawn bottom-up while searching (see reverseLayout in the Drawer),
+ * so item 0, the best match, sits right above the search line, under the thumb.
  */
 private fun buildModel(apps: List<AppEntry>, q: String, s: ShellViewModel): Model {
     val items = mutableListOf<Item>()
@@ -139,9 +140,9 @@ private fun buildModel(apps: List<AppEntry>, q: String, s: ShellViewModel): Mode
         visible.groupBy { it.letter() }
             .toSortedMap(compareBy<Char> { if (it == '#') '\u0000' else it })
             .forEach { (letter, list) ->
-                index[letter] = items.size // scrolling here puts the group's bottom edge at the bottom of the view
-                list.asReversed().forEach { items += Item.App(it) }
+                index[letter] = items.size // scrolling here puts the section's header at the top of the view
                 items += Item.Header(letter, list.size)
+                list.forEach { items += Item.App(it) }
             }
         first = visible.firstOrNull()
     } else {
@@ -214,20 +215,6 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
     val firstSetting = model.items.firstOrNull { it is Item.Setting } as? Item.Setting
     val engine = SearchEngines.byId(state.searchEngine)
     val browsing = q.isEmpty()
-    // The section the topmost visible row belongs to. In the bottom-up list a header comes after its apps, so
-    // look upward from the top row to the next header. Null while searching (no headers then).
-    val currentLetter by remember(model) {
-        derivedStateOf {
-            val top = listState.layoutInfo.visibleItemsInfo.maxOfOrNull { it.index } ?: 0
-            var letter: Char? = null
-            var i = top
-            while (letter == null && i < model.items.size) {
-                letter = (model.items[i] as? Item.Header)?.letter
-                i++
-            }
-            letter
-        }
-    }
     val appCount = model.items.count { it is Item.App }
     val countLabel = when {
         browsing -> "$appCount APPS"
@@ -328,8 +315,8 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
             )
             .nestedScroll(drawerScroll) // swipe down on the list once it can't scroll any further
     ) {
-        // a full-screen page that rises over Home. It carries its own backdrop, so the shell's arcs and glow show
-        // between the words, and Home's clock and apps never show through the list.
+        // a full-screen page that rises over Home, on a calm solid surface: nothing sits behind the words to compete
+        // with them, and Home's clock and apps never show through the list.
         Box(
             Modifier
                 .align(Alignment.BottomCenter)
@@ -339,25 +326,14 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                 .fillMaxSize()
                 .pointerInput(Unit) { detectTapGestures { } } // taps on the page itself don't close it
         ) {
-            if (!state.shellBackdrop) Box(Modifier.matchParentSize().background(Sea.copy(alpha = 0.92f)))
-            ShellBackdrop(solid = state.shellBackdrop)
-            // the letter of the section you are in, huge and faint behind the words
-            Crossfade(targetState = currentLetter, animationSpec = tween(220), label = "ghost") { l ->
-                if (l != null) {
-                    Text(
-                        l.toString(),
-                        style = TextStyle(color = Sand.copy(alpha = 0.06f), fontSize = 240.sp, fontWeight = FontWeight.ExtraLight),
-                        modifier = Modifier.offset(x = (-12).dp, y = 56.dp),
-                    )
-                }
-            }
+            Box(Modifier.matchParentSize().background(Sea.copy(alpha = if (state.shellBackdrop) 1f else 0.94f)))
         Column(
             Modifier
                 .fillMaxSize()
                 .windowInsetsPadding(WindowInsets.systemBars.union(WindowInsets.ime))
-                .padding(start = 24.dp, end = 10.dp, top = 8.dp)
+                .padding(start = 28.dp, end = 12.dp, top = 8.dp)
         ) {
-            Row(Modifier.fillMaxWidth().padding(end = 14.dp, bottom = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(Modifier.fillMaxWidth().padding(end = 14.dp, top = 12.dp, bottom = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(if (browsing) "ALL APPS" else "RESULTS", style = ink(11.sp, Dim, mono = true, tracking = 2.sp))
                 Text(countLabel, style = ink(11.sp, Dim, mono = true, tracking = 1.sp))
             }
@@ -365,8 +341,10 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                 Row(Modifier.fillMaxWidth()) {
                     LazyColumn(
                         state = listState,
-                        reverseLayout = true,
-                        contentPadding = PaddingValues(top = 36.dp, bottom = 6.dp, end = 4.dp),
+                        // browsing reads A to Z from the top; search results stack up from the bottom, so the best
+                        // match is the one next to your thumb and the search line
+                        reverseLayout = !browsing,
+                        contentPadding = PaddingValues(top = 36.dp, bottom = 12.dp, end = 4.dp),
                         modifier = Modifier.weight(1f).fadeTop(36.dp),
                     ) {
                         items(
@@ -399,7 +377,7 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                     }
 
                     if (browsing && model.index.isNotEmpty()) {
-                        SpineRail(model.index.keys.toList(), currentLetter, accent) { letter ->
+                        Scrubber(model.index.keys.toList(), listState, accent) { letter ->
                             model.index[letter]?.let { target -> scope.launch { listState.scrollToItem(target) } }
                         }
                     }
@@ -408,8 +386,8 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
 
             // the query: a bare line at the bottom, within thumb reach
             Spacer(Modifier.height(6.dp))
-            Column(Modifier.fillMaxWidth().padding(end = 14.dp, bottom = 14.dp)) {
-                Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.fillMaxWidth().padding(end = 14.dp, bottom = 20.dp)) {
+                Row(Modifier.fillMaxWidth().padding(vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("›", style = ink(22.sp, accent, mono = true))
                 Spacer(Modifier.width(10.dp))
                 BasicTextField(
@@ -460,8 +438,8 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
 
 @Composable
 private fun SectionHeader(letter: Char, accent: Color) {
-    Row(Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(letter.toString(), style = ink(11.sp, accent, mono = true, tracking = 2.sp))
+    Row(Modifier.fillMaxWidth().padding(top = 30.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(letter.toString(), style = ink(12.sp, accent, mono = true, tracking = 2.sp))
         Spacer(Modifier.width(12.dp))
         Hairline(Modifier.weight(1f))
     }
@@ -477,7 +455,7 @@ private fun AppRow(app: AppEntry, state: ShellViewModel, accent: Color, highligh
             Modifier
                 .fillMaxWidth()
                 .pressableRow(onClick = onOpen, onLongClick = { menu = true })
-                .padding(vertical = 7.dp),
+                .padding(vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
@@ -494,9 +472,9 @@ private fun AppRow(app: AppEntry, state: ShellViewModel, accent: Color, highligh
             Text(
                 app.label,
                 style = ink(
-                    21.sp,
+                    20.sp,
                     Sand.copy(if (hidden) 0.5f else 0.96f),
-                    if (highlight) FontWeight.Normal else FontWeight.Light,
+                    if (highlight) FontWeight.Medium else FontWeight.Normal,
                 ),
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
@@ -546,7 +524,7 @@ private fun FrequentRow(apps: List<AppEntry>, state: ShellViewModel, onOpen: (Ap
                         var menu by remember { mutableStateOf(false) }
                         Box(Modifier.weight(1f, fill = false)) {
                             Text(
-                                app.label, style = ink(18.sp, Sand.copy(0.96f), FontWeight.Light),
+                                app.label, style = ink(18.sp, Sand.copy(0.96f), FontWeight.Normal),
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.pressable(onClick = { onOpen(app) }, onLongClick = { menu = true }),
                             )
@@ -630,21 +608,18 @@ private fun BangRow(bang: SearchBang, query: String, accent: Color, onOpen: () -
 }
 
 /**
- * The drawer's spine: a 2dp line on the right edge with tiny letters beside it, A at the bottom (matching the
- * bottom-up list). The visible part is thin, but the touch target is 40dp wide. While scrubbing, the active
- * letter is shown large to the left of the thumb.
+ * A single thin line down the right edge that shows where you are in the list. Touch it and drag to scrub: the list
+ * jumps section by section and a big letter shows next to your finger. When idle it is almost invisible.
  */
 @Composable
-private fun SpineRail(letters: List<Char>, current: Char?, accent: Color, onJump: (Char) -> Unit) {
+private fun Scrubber(letters: List<Char>, listState: LazyListState, accent: Color, onJump: (Char) -> Unit) {
     var height by remember { mutableFloatStateOf(1f) }
-    var active by remember { mutableIntStateOf(-1) } // index into letters; 0 = bottom
+    var active by remember { mutableIntStateOf(-1) } // index into letters while a finger is down; 0 = top
     val haptic = LocalHapticFeedback.current
     val jumpTo by rememberUpdatedState(onJump)
-    // while dragging, the letter under the finger; otherwise the section you are reading
-    val shown = if (active >= 0) active else current?.let { letters.indexOf(it) } ?: -1
 
     fun jump(y: Float) {
-        val i = ((height - y) / height * letters.size).toInt().coerceIn(0, letters.lastIndex)
+        val i = (y / height * letters.size).toInt().coerceIn(0, letters.lastIndex)
         if (i != active) {
             active = i
             haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
@@ -655,7 +630,7 @@ private fun SpineRail(letters: List<Char>, current: Char?, accent: Color, onJump
     Box(
         Modifier
             .fillMaxHeight()
-            .width(40.dp)
+            .width(36.dp)
             .onSizeChanged { height = it.height.toFloat().coerceAtLeast(1f) }
             .pointerInput(letters) {
                 detectTapGestures(onPress = { o ->
@@ -674,19 +649,22 @@ private fun SpineRail(letters: List<Char>, current: Char?, accent: Color, onJump
             },
         contentAlignment = Alignment.CenterEnd,
     ) {
-        Column(
-            Modifier.fillMaxHeight().padding(end = 6.dp),
-            verticalArrangement = Arrangement.SpaceEvenly,
-            horizontalAlignment = Alignment.End,
-        ) {
-            for (i in letters.indices.reversed()) {
-                Text(
-                    letters[i].toString(),
-                    style = ink(12.sp, if (i == shown) accent else Dim, if (i == shown) FontWeight.Bold else FontWeight.Normal),
-                    // the letter you are on sits in a soft bead of the accent colour
-                    modifier = Modifier.drawBehind { if (i == shown) drawCircle(accent.copy(alpha = 0.22f), radius = 11.dp.toPx()) },
-                )
-            }
+        // the track, and a short handle at your position in the list (read while drawing, so scrolling only redraws)
+        Canvas(Modifier.fillMaxHeight().width(6.dp)) {
+            val touching = active >= 0
+            val x = size.width - 1.dp.toPx()
+            drawLine(
+                Sand.copy(alpha = if (touching) 0.30f else 0.12f),
+                Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx(),
+            )
+            val total = listState.layoutInfo.totalItemsCount.coerceAtLeast(1)
+            val handle = 36.dp.toPx()
+            val y = listState.firstVisibleItemIndex / total.toFloat() * (size.height - handle)
+            drawLine(
+                accent.copy(alpha = if (touching) 1f else 0.7f),
+                Offset(x, y), Offset(x, y + handle),
+                strokeWidth = (if (touching) 3 else 2).dp.toPx(), cap = StrokeCap.Round,
+            )
         }
         if (active >= 0) {
             Text(
@@ -696,8 +674,8 @@ private fun SpineRail(letters: List<Char>, current: Char?, accent: Color, onJump
                     .align(Alignment.TopEnd)
                     .offset {
                         IntOffset(
-                            -56.dp.roundToPx(),
-                            ((letters.size - active - 0.5f) / letters.size * height).toInt() - 36.dp.roundToPx(),
+                            -48.dp.roundToPx(),
+                            ((active + 0.5f) / letters.size * height).toInt() - 36.dp.roundToPx(),
                         )
                     },
             )
