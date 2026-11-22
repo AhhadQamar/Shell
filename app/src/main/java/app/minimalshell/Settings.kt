@@ -166,20 +166,27 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
             }
 
             // optional accessibility service: double-tap to lock (needs Android 9+)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                val lockOn = ShellAccessibilityService.running
+if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+val lockOn = ShellAccessibilityService.running
                 Spacer(Modifier.height(22.dp))
                 Row(
                     Modifier.fillMaxWidth().clickable { openAccessibilitySettings(ctx) },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text("double-tap to lock", style = ink(18.sp))
+                       Text(
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        "double-tap the home screen to lock; also opens the shade reliably"
+    } else {
+        "opens the notification shade reliably"
+    },
+    style = ink(11.sp, Dim, mono = true),
+)
                         Text(
-                            if (lockOn) "double-tap the home screen to lock; also opens the shade reliably"
-                            else "needs shell's lock service, switched on in accessibility settings",
-                            style = ink(11.sp, Dim, mono = true),
-                        )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && lockOn) "on"
+    else "set ›",
+    style = ink(13.sp, accent, mono = true),
+)
                     }
                     Text(if (lockOn) "on" else "set ›", style = ink(13.sp, accent, mono = true))
                 }
