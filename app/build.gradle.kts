@@ -10,16 +10,12 @@ android {
 
     defaultConfig {
         applicationId = "app.minimalshell"
-        minSdk = 27
+        minSdk = 23
         targetSdk = 35
-        // CI sets GITHUB_RUN_NUMBER, so every build is newer than the last and installs as an in-place update.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
         versionName = "1.1"
     }
 
-    // One stable signing key for every build, so a new APK updates the old one instead of conflicting with it.
-    // The keystore is committed (app/shell.jks). To use a private key instead, set these environment
-    // variables (e.g. from GitHub Secrets) and nothing else needs to change.
     signingConfigs {
         create("shell") {
             storeFile = file(System.getenv("SHELL_KEYSTORE_FILE") ?: "shell.jks")
@@ -30,20 +26,33 @@ android {
     }
 
     buildTypes {
-        debug { signingConfig = signingConfigs.getByName("shell") }
+        debug {
+            signingConfig = signingConfigs.getByName("shell")
+        }
+
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
             signingConfig = signingConfigs.getByName("shell")
         }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+
+    buildFeatures {
+        compose = true
+    }
 }
 
 dependencies {

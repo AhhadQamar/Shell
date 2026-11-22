@@ -161,7 +161,7 @@ fun Home(
 
             StackedClock(
                 tick.time, accent,
-                Modifier.padding(top = 18.dp).entrance(entrance, 100).pressable(onClick = { openClock(ctx) }),
+                Modifier.padding(top = 18.dp).entrance(entrance, 100).pressable(onClick = { openClock(ctx, apps) }),
             )
             Text(
                 tick.dayName, style = ink(17.sp),
@@ -170,7 +170,7 @@ fun Home(
             tick.alarm?.let {
                 Text(
                     it.uppercase(), style = ink(11.sp, accent, mono = true, tracking = 1.sp),
-                    modifier = Modifier.padding(top = 4.dp, start = 4.dp).entrance(entrance, 220).pressable(onClick = { openClock(ctx) }),
+                    modifier = Modifier.padding(top = 4.dp, start = 4.dp).entrance(entrance, 220).pressable(onClick = { openClock(ctx, apps) }),
                 )
             }
             Text(
