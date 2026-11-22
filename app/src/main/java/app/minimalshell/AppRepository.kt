@@ -1,5 +1,5 @@
 package app.minimalshell
-
+import android.os.Build
 import android.app.Application
 import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherActivityInfo
@@ -48,17 +48,25 @@ class AppRepository(private val app: Application) {
     }
 
     /** The app's own quick actions, as shown by the long-press menu. */
-    suspend fun shortcuts(app: AppEntry): List<AppShortcut> = withContext(Dispatchers.Default) {
+suspend fun shortcuts(app: AppEntry): List<AppShortcut> {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1) {
+        return emptyList()
+    }
+
+    return withContext(Dispatchers.Default) {
         try {
-            // hasShortcutHostPermission() is part of the platform API, but direct references may be absent from
-            // some compile SDK stubs. Reflectively check it; if unavailable, shortcut querying below still safely
-            // returns an empty list for callers without host permission.
             if (!hasShortcutHostPermission()) return@withContext emptyList()
+
             val query = LauncherApps.ShortcutQuery()
                 .setPackage(app.pkg)
                 .setActivity(app.component)
-                .setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST)
-            launcherApps.getShortcuts(query, me).orEmpty()
+                .setQueryFlags(
+                    LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or
+                        LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST
+                )
+
+            launcherApps.getShortcuts(query, me)
+                .orEmpty()
                 .filter { it.isEnabled }
                 .sortedBy { it.rank }
                 .take(MAX_SHORTCUTS)
@@ -68,6 +76,21 @@ class AppRepository(private val app: Application) {
             emptyList()
         }
     }
+}
+
+fun startShortcut(s: AppShortcut): Boolean {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N_MR1) {
+        return false
+    }
+
+    return try {
+        launcherApps.startShortcut(s.pkg, s.id, null, null, me)
+        true
+    } catch (e: Exception) {
+        Log.w("Shell", "couldn't start shortcut ${s.id}", e)
+        false
+    }
+}
 
     private fun hasShortcutHostPermission(): Boolean =
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && runCatching {
