@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.text.format.DateFormat
@@ -35,6 +36,8 @@ private val FallbackAccent = Peach
 
 /** Picks the most vivid of the wallpaper's primary/secondary/tertiary colors (saturation + brightness score). */
 fun pickAccent(ctx: Context): Color {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return FallbackAccent
+
     val wc = WallpaperManager.getInstance(ctx).getWallpaperColors(WallpaperManager.FLAG_SYSTEM)
         ?: return FallbackAccent
     val hsv = FloatArray(3)
@@ -54,10 +57,16 @@ fun rememberAccent(): State<Color> {
     val ctx = LocalContext.current
     val state = remember { mutableStateOf(pickAccent(ctx)) }
     DisposableEffect(Unit) {
-        val wm = WallpaperManager.getInstance(ctx)
-        val listener = WallpaperManager.OnColorsChangedListener { _, _ -> state.value = pickAccent(ctx) }
-        wm.addOnColorsChangedListener(listener, Handler(Looper.getMainLooper()))
-        onDispose { wm.removeOnColorsChangedListener(listener) }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            onDispose { }
+        } else {
+            val wm = WallpaperManager.getInstance(ctx)
+            val listener = WallpaperManager.OnColorsChangedListener { _, _ ->
+                state.value = pickAccent(ctx)
+            }
+            wm.addOnColorsChangedListener(listener, Handler(Looper.getMainLooper()))
+            onDispose { wm.removeOnColorsChangedListener(listener) }
+        }
     }
     return state
 }
