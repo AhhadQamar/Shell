@@ -51,7 +51,7 @@ private fun placeholderIcon(px: Int): Bitmap =
     }
 
 /**
- * Draws the icon once at the size it is displayed (largest use is the 48dp frequent-apps icon at this screen's density),
+ * Draws the icon once at the size it is displayed (largest use is the 56dp drawer tile at this screen's density),
  * then moves it to a GPU-only bitmap: it costs no Java heap and is already uploaded when the list first scrolls.
  * Every step falls back to something that works, so one odd icon can't break loading.
  */

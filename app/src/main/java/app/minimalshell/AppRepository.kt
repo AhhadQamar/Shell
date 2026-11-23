@@ -20,6 +20,8 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 
 class AppRepository(private val app: Context) {
@@ -32,19 +34,22 @@ class AppRepository(private val app: Context) {
     suspend fun load(): List<AppEntry> = coroutineScope {
         val pm = app.packageManager
         val metrics = app.resources.displayMetrics
-        val px = (LARGEST_ICON_DP * metrics.density)
+        val px = (DRAWER_ICON_DP * metrics.density)
             .roundToInt()
-            .coerceIn(96, 256)
+            .coerceIn(48, 96)
 
         val collator = Collator.getInstance().apply {
             strength = Collator.PRIMARY
         }
 
+        val semaphore = Semaphore(MAX_ICON_LOAD_CONCURRENT)
         launcherApps.getActivityList(null, me)
             .filter { it.componentName.packageName != app.packageName }
             .map { info ->
-                async {
-                    toEntry(info, pm, px, metrics.densityDpi)
+                async(Dispatchers.Default) {
+                    semaphore.withPermit {
+                        toEntry(info, pm, px, metrics.densityDpi)
+                    }
                 }
             }
             .awaitAll()
@@ -223,7 +228,8 @@ private fun toEntry(
     }.getOrNull()
 
 private const val MAX_SHORTCUTS = 4
-private const val LARGEST_ICON_DP = 48
+private const val DRAWER_ICON_DP = 56
+private const val MAX_ICON_LOAD_CONCURRENT = 4
 
 data class AppShortcut(
     val id: String,
