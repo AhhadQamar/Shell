@@ -11,6 +11,7 @@ import androidx.core.graphics.drawable.toBitmap
 import java.text.Normalizer
 import java.util.Locale
 import kotlinx.coroutines.launch
+import android.os.Build
 
 /**
  * One launcher entry. Everything the UI and search need is computed once, here, off the main thread,
@@ -57,7 +58,12 @@ private fun placeholderIcon(px: Int): Bitmap =
  */
 fun renderIcon(d: Drawable, px: Int): ImageBitmap {
     val soft = try { d.toBitmap(px, px) } catch (_: Throwable) { placeholderIcon(px) }
-    val gpu = try { soft.copy(Bitmap.Config.HARDWARE, false) } catch (_: Throwable) { null }
+    // GPU-only bitmaps exist from Android 8. Asking for one on Android 6 throws, once per icon, so don't.
+    val gpu = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        try { soft.copy(Bitmap.Config.HARDWARE, false) } catch (_: Throwable) { null }
+    } else {
+        null
+    }
     // Don't recycle `soft`: toBitmap() may hand back the app's own cached bitmap, which isn't ours to free.
     return (gpu ?: soft).asImageBitmap()
 }

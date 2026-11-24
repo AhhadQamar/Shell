@@ -165,28 +165,27 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
                 Text(SearchEngines.byId(state.searchEngine).name + " \u203A", style = ink(13.sp, accent, mono = true))
             }
 
-            // optional accessibility service: double-tap to lock (needs Android 9+)
-if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-val lockOn = ShellAccessibilityService.running
+            // optional accessibility service. On Android 9+ it also lets double-tap lock the screen; on older
+            // versions it still opens the notification shade reliably.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val lockOn = ShellAccessibilityService.running
+                val canLock = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
                 Spacer(Modifier.height(22.dp))
                 Row(
                     Modifier.fillMaxWidth().clickable { openAccessibilitySettings(ctx) },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
-                       Text(
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        "double-tap the home screen to lock; also opens the shade reliably"
-    } else {
-        "opens the notification shade reliably"
-    },
-    style = ink(11.sp, Dim, mono = true),
-)
+                        Text(if (canLock) "double-tap to lock" else "notification shade", style = ink(18.sp))
                         Text(
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && lockOn) "on"
-    else "set ›",
-    style = ink(13.sp, accent, mono = true),
-)
+                            when {
+                                canLock && lockOn -> "double-tap the home screen to lock; also opens the shade reliably"
+                                canLock -> "needs shell's service, switched on in accessibility settings"
+                                lockOn -> "opens the notification shade reliably"
+                                else -> "switch on shell's service in accessibility settings to open the shade reliably"
+                            },
+                            style = ink(11.sp, Dim, mono = true),
+                        )
                     }
                     Text(if (lockOn) "on" else "set ›", style = ink(13.sp, accent, mono = true))
                 }

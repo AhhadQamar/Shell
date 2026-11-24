@@ -20,7 +20,7 @@ Shell keeps the home screen calm and useful: a clock, battery status, pinned app
 
 ## Install
 
-Download the latest APK from the [Releases](https://github.com/AhhadQamar/Shell/releases) page and install it on an Android device running Android 8.1 (API 27) or newer.
+Download the latest APK from the [Releases](https://github.com/AhhadQamar/Shell/releases) page and install it on an Android device running Android 6.0 (API 23) or newer.
 
 After installation:
 
