@@ -393,6 +393,9 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                 BasicTextField(
                     value = query,
                     onValueChange = { query = it },
+                    // While the drawer is parked off-screen the field must not exist as far as focus is concerned,
+                    // otherwise it can keep focus and make Android pop the keyboard up over Home.
+                    enabled = showing,
                     singleLine = true,
                     textStyle = TextStyle(
                         color = Sand, fontSize = 16.sp,
