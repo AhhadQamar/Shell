@@ -95,6 +95,13 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.Dp
 
 private sealed interface Item {
     data class Calc(val result: String) : Item
@@ -215,6 +222,9 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
     val firstSetting = model.items.firstOrNull { it is Item.Setting } as? Item.Setting
     val engine = SearchEngines.byId(state.searchEngine)
     val browsing = q.isEmpty()
+    // "one page" style: every visible app at once, in a grid that shrinks to fit. Searching still shows the normal results.
+    val pageMode = state.drawerPage && browsing
+    val pageApps = remember(apps, state.hidden) { apps.filter { it.key !in state.hidden } }
     val appCount = model.items.count { it is Item.App }
     val countLabel = when {
         browsing -> "$appCount APPS"
@@ -337,6 +347,9 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                 Text(if (browsing) "ALL APPS" else "RESULTS", style = ink(11.sp, Dim, mono = true, tracking = 2.sp))
                 Text(countLabel, style = ink(11.sp, Dim, mono = true, tracking = 1.sp))
             }
+            if (pageMode) {
+                AllAppsPage(pageApps, state, { open(it) }, Modifier.weight(1f).fillMaxWidth().padding(end = 12.dp))
+            } else {
             Box(Modifier.weight(1f)) {
                 Row(Modifier.fillMaxWidth()) {
                     LazyColumn(
@@ -382,6 +395,7 @@ fun Drawer(apps: List<AppEntry>, state: ShellViewModel, accent: Color, drawer: D
                         }
                     }
                 }
+            }
             }
 
             // the query: a bare line at the bottom, within thumb reach
@@ -683,5 +697,77 @@ private fun Scrubber(letters: List<Char>, listState: LazyListState, accent: Colo
                     },
             )
         }
+    }
+}
+
+// ---------- the "one page" style ----------
+
+private val MaxCell = 76.dp
+private val MinCell = 30.dp
+private val CellGap = 6.dp
+
+/**
+ * Every app at once. It picks the biggest square cell at which all of them fit on this page without scrolling, so a
+ * handful of apps get big, labelled icons and a hundred and fifty get small ones. Below the smallest size it
+ * stops shrinking and scrolls instead, so nothing ever becomes untappable.
+ */
+@Composable
+private fun AllAppsPage(
+    apps: List<AppEntry>,
+    state: ShellViewModel,
+    onOpen: (AppEntry) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BoxWithConstraints(modifier) {
+        val w = maxWidth
+        val h = maxHeight
+        val fit = remember(apps.size, w, h) {
+            var cell = MaxCell
+            var found: Pair<Dp, Int>? = null
+            while (cell >= MinCell && found == null) {
+                val cols = ((w + CellGap) / (cell + CellGap)).toInt().coerceAtLeast(1)
+                val rows = (apps.size + cols - 1) / cols
+                if ((cell + CellGap) * rows - CellGap <= h) found = cell to cols else cell -= 2.dp
+            }
+            found
+        }
+        val cell = fit?.first ?: MinCell
+        val cols = fit?.second ?: ((w + CellGap) / (MinCell + CellGap)).toInt().coerceAtLeast(1)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(cols),
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = fit == null, // only scrolls when even the smallest cell can't fit everything
+            horizontalArrangement = Arrangement.spacedBy(CellGap),
+            verticalArrangement = Arrangement.spacedBy(CellGap),
+        ) {
+            items(apps, key = { it.key }) { app -> PageCell(app, cell, state, onOpen) }
+        }
+    }
+}
+
+/** One app on the page. Big cells show the name under the icon; small ones are icon only (long-press for the menu). */
+@Composable
+private fun PageCell(app: AppEntry, size: Dp, state: ShellViewModel, onOpen: (AppEntry) -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    val labelled = size >= 60.dp
+    Box(Modifier.fillMaxWidth().height(size), contentAlignment = Alignment.Center) {
+        Column(
+            Modifier.size(size).pressable(onClick = { onOpen(app) }, onLongClick = { menu = true }),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            if (size >= 48.dp) {
+                ShellIcon(app, if (labelled) size * 0.68f else size * 0.9f, label = if (labelled) null else app.label)
+            } else {
+                AppIcon(app, size * 0.85f, Modifier.clip(CircleShape))
+            }
+            if (labelled) {
+                Text(
+                    app.label, style = ink(10.sp, Sand.copy(0.85f)),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center,
+                )
+            }
+        }
+        AppMenu(app, state, menu) { menu = false }
     }
 }

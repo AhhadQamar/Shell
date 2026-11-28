@@ -137,6 +137,18 @@ fun SettingsSheet(apps: List<AppEntry>, state: ShellViewModel, accent: Color, on
             SettingToggle("shell background", "the shell's own backdrop instead of your wallpaper", state.shellBackdrop, accent) {
                 state.updateShellBackdrop(it)
             }
+            // tap to switch between the two drawer styles
+            Spacer(Modifier.height(22.dp))
+            Row(
+                Modifier.fillMaxWidth().clickable { state.updateDrawerPage(!state.drawerPage) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("drawer style", style = ink(18.sp))
+                    Text("a list you scroll, or every app at once on one page", style = ink(12.sp, Dim))
+                }
+                Text(if (state.drawerPage) "one page \u203A" else "scroll \u203A", style = ink(13.sp, accent, mono = true))
+            }
             SettingToggle("icons in the drawer", "off: just the names, lighter and calmer", state.drawerIcons, accent) {
                 state.updateDrawerIcons(it)
             }

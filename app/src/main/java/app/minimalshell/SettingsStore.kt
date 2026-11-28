@@ -33,6 +33,7 @@ private val SEARCH_ENGINE = stringPreferencesKey("searchEngine")
 private val MOOD_AUTO = booleanPreferencesKey("moodAuto")
 private val SHELL_BACKDROP = booleanPreferencesKey("shellBackdrop")
 private val DRAWER_ICONS = booleanPreferencesKey("drawerIcons")
+private val DRAWER_PAGE = booleanPreferencesKey("drawerPage")
 private val INSTANT_LAUNCH = booleanPreferencesKey("instantLaunch")
 private val HIDE_HIDDEN_IN_SEARCH = booleanPreferencesKey("hiddenInSearch")
 
@@ -57,6 +58,8 @@ class SettingsStore(context: Context) {
         val shellBackdrop: Boolean = true,
         /** False (default): the drawer is words only. True: each app gets an icon tile. */
         val drawerIcons: Boolean = false,
+        /** False (default): the drawer is a list you scroll. True: every app at once on a single page. */
+        val drawerPage: Boolean = false,
     )
 
     /** Never throws (except cancellation): unreadable storage just means defaults. */
@@ -82,6 +85,7 @@ class SettingsStore(context: Context) {
             moodFollowsDay = p[MOOD_AUTO] ?: false,
             shellBackdrop = p[SHELL_BACKDROP] ?: true,
             drawerIcons = p[DRAWER_ICONS] ?: false,
+            drawerPage = p[DRAWER_PAGE] ?: false,
         )
     }
 
@@ -98,6 +102,7 @@ class SettingsStore(context: Context) {
     suspend fun saveMoodFollowsDay(on: Boolean) = write { it[MOOD_AUTO] = on }
     suspend fun saveShellBackdrop(on: Boolean) = write { it[SHELL_BACKDROP] = on }
     suspend fun saveDrawerIcons(on: Boolean) = write { it[DRAWER_ICONS] = on }
+    suspend fun saveDrawerPage(on: Boolean) = write { it[DRAWER_PAGE] = on }
 
     private suspend fun write(change: (MutablePreferences) -> Unit) {
         try {
